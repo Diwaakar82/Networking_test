@@ -11,9 +11,10 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <time.h>
+#include <linux/net_tstamp.h>
 
-#define PORT "3490"			//Port used for connections
-#define MAXDATASIZE 100
+#define PORT "8000"			//Port used for connections
+#define MAXDATASIZE 1000
 
 void *get_in_addr (struct sockaddr *sa)
 {
@@ -55,6 +56,13 @@ int main (int argc, char *argv [])
 			continue;
 		}
 		
+		int val = SOF_TIMESTAMPING_RAW_HARDWARE;
+		if (setsockopt (sockfd, SOL_SOCKET, SO_TIMESTAMPING, &val, sizeof (int)) == -1)
+		{
+			perror ("setsockopt timestamp");
+			exit (1);
+		}
+		
 		if (connect (sockfd, p -> ai_addr, p -> ai_addrlen) == -1)
 		{
 			close (sockfd);
@@ -83,6 +91,21 @@ int main (int argc, char *argv [])
 		exit (0);
 	}
 	
+	char data[4096], ctrl[4096];
+	struct msghdr msg;
+	struct cmsghdr *cmsg;
+	struct iovec iov;
+	ssize_t len;
+	
+	memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = ctrl;
+    msg.msg_controllen = sizeof(ctrl);
+  	iov.iov_base = data;
+    iov.iov_len = sizeof(data);
+	
+	
 	
 	if ((numbytes = recv (sockfd, buf, sizeof (buf), 0)) == -1)
 	{
@@ -90,15 +113,15 @@ int main (int argc, char *argv [])
 		exit (0);
 	}
 	
-	buf [numbytes] = '\0';
-	time_t mytime = time(NULL);
-	char * time_str = ctime (&mytime);
-	time_str [strlen(time_str) - 1] = ' ';
-	time_str [strlen(time_str)] = '\0';
+	char buff[1000];
+    		
+	cmsg = CMSG_FIRSTHDR(&msg);
+	struct timespec *ts = (struct timespec *)CMSG_DATA(cmsg);       
+    timespec_get (ts, TIME_UTC);
+    
+	strftime(buff, sizeof buff, "%D %T", gmtime(&ts -> tv_sec));
 	
-	
-	
-	printf ("client: recieved '%s %s'\n", time_str, buf);
+	printf ("client recieved Time: %s\n%s\n", buff, buf);
 	close (sockfd);
 	
 	return 0;

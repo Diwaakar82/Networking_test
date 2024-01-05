@@ -11,8 +11,9 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <time.h>
+#include <linux/net_tstamp.h>
 
-#define PORT "3490"			//Port used for connections
+#define PORT "8000"			//Port used for connections
 #define BACKLOG 10			//Pending connections queue can hold
 
 void sigchld_handler (int s)
@@ -66,6 +67,12 @@ int main ()
 			exit (1);
 		}
 		
+		int val = SOF_TIMESTAMPING_RAW_HARDWARE;
+		if (setsockopt (sockfd, SOL_SOCKET, SO_TIMESTAMPING, &val, sizeof (int)) == -1)
+		{
+			perror ("setsockopt timestamp");
+			exit (1);
+		}
 		if (bind (sockfd, p -> ai_addr, p -> ai_addrlen) == -1)
 		{
 			close (sockfd);
@@ -105,6 +112,21 @@ int main ()
 	while (1)
 	{
 		sin_size = sizeof their_addr;
+		
+		char data[4096], ctrl[4096];
+		struct msghdr msg;
+		struct cmsghdr *cmsg;
+		struct iovec iov;
+		ssize_t len;
+		
+		memset(&msg, 0, sizeof(msg));
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = ctrl;
+        msg.msg_controllen = sizeof(ctrl);
+      	iov.iov_base = data;
+        iov.iov_len = sizeof(data);
+        
 		new_fd = accept (sockfd, (struct sockaddr *)&their_addr, &sin_size);
 		if (new_fd == -1)
 		{
@@ -120,21 +142,23 @@ int main ()
 			close (sockfd);
 			
 			int numbytes;
-			char buffer [100];
-    
-			if ((numbytes = recv (new_fd, buffer, 100, 0)) == -1)
+			char buffer [1000];
+    		char buff[1000];
+    		
+			if ((len = recv (new_fd, buffer, 1000, 0)) == -1)
 				perror ("recv");
 			
-			time_t mytime = time(NULL);
-			char * time_str = ctime (&mytime);
-			time_str [strlen(time_str) - 1] = ' ';
-			time_str [strlen(time_str)] = '\0';
+			cmsg = CMSG_FIRSTHDR(&msg);
+			struct timespec *ts = (struct timespec *)CMSG_DATA(cmsg);       
+	        timespec_get (ts, TIME_UTC);
+	        
+			strftime(buff, sizeof buff, "%D %T", gmtime(&ts -> tv_sec));
+
 			
-			strcat (time_str, buffer);
-			strcpy (buffer, time_str);
-			
+			sprintf (buff, "%s\nMessage: %s\n",buff, buffer);
+			sprintf (buffer, "Server recieved time: %s", buff);
 			sleep (5);
-				
+			
 			if (send (new_fd, buffer, sizeof (buffer), 0) == -1)
 			{
 				perror ("send");
@@ -147,6 +171,7 @@ int main ()
 		
 		close (new_fd);
 	}
+	close (sockfd);
 	
 	return 0;
 }
