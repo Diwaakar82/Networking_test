@@ -10,6 +10,7 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <time.h>
 
 #define PORT "3490"			//Port used for connections
 #define BACKLOG 10			//Pending connections queue can hold
@@ -117,9 +118,29 @@ int main ()
 		if (!fork ())
 		{
 			close (sockfd);
-			if (send (new_fd, "Hello world!!", 13, 0) == -1)
-				perror ("send");
+			
+			int numbytes;
+			char buffer [100];
+    
+			if ((numbytes = recv (new_fd, buffer, 100, 0)) == -1)
+				perror ("recv");
+			
+			time_t mytime = time(NULL);
+			char * time_str = ctime (&mytime);
+			time_str [strlen(time_str) - 1] = ' ';
+			time_str [strlen(time_str)] = '\0';
+			
+			strcat (time_str, buffer);
+			strcpy (buffer, time_str);
+			
+			sleep (5);
 				
+			if (send (new_fd, buffer, sizeof (buffer), 0) == -1)
+			{
+				perror ("send");
+				exit (0);
+			}
+
 			close (new_fd);
 			exit (0);
 		}
