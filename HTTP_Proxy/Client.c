@@ -19,8 +19,8 @@ int main(int argc, char* argv[])
   	printf ("\nEnter a port:");  
   	fgets (port, sizeof ("5000\n") + 1, stdin);  
   	fputs (port, stdout);  
-  	if ((strcmp (IP, "127.0.0.1\n")) != 0 || (strcmp (port, "5000\n")) != 0)    
-       printf ("Invalida proxy settings. Try again...");  
+  	if ((strcmp (IP, "127.0.0.1\n")) != 0)    
+       printf ("Invalid proxy settings. Try again...");  
   	else  
   	{  
        	// create a socket  
@@ -30,7 +30,7 @@ int main(int argc, char* argv[])
        	memset (&client_sd, 0, sizeof (client_sd));  
        	// set socket variables  
        	client_sd.sin_family = AF_INET;  
-       	client_sd.sin_port = htons (5000);  
+       	client_sd.sin_port = htons (atoi (port));  
        	// assign any IP address to the client's socket  
        	client_sd.sin_addr.s_addr = INADDR_ANY;   
        	// connect to proxy server at mentioned port number  

@@ -16,6 +16,7 @@
 #define PORT "8000"			//Port used for connections
 #define BACKLOG 10			//Pending connections queue can hold
 
+//Handle child processes
 void sigchld_handler (int s)
 {
 	int saved_errno = errno;
@@ -24,6 +25,7 @@ void sigchld_handler (int s)
 	errno = saved_errno;
 }
 
+//Fetch internet address
 void *get_in_addr (struct sockaddr *sa)
 {
 	if (sa -> sa_family == AF_INET)
@@ -32,70 +34,76 @@ void *get_in_addr (struct sockaddr *sa)
 	return &(((struct sockaddr_in6 *) sa) -> sin6_addr);
 }
 
-int main ()
+//Connect to a socket
+struct addrinfo *connect_to_socket (int *sockfd, struct addrinfo *servinfo)
 {
-	int sockfd, new_fd;
-	struct addrinfo hints, *servinfo, *p;
-	struct sockaddr_storage their_addr;
-	socklen_t sin_size;
-	struct sigaction sa;
+	struct addrinfo *p;
 	int yes = 1;
-	char s [INET6_ADDRSTRLEN];
-	int rv;
-	
-	memset (&hints, 0, sizeof hints);
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = AI_PASSIVE;
-	
-	if ((rv = getaddrinfo (NULL, PORT, &hints, &servinfo)) != 0)
-	{
-		fprintf (stderr, "getaddrinfo: %s\n", gai_strerror (rv));
-		return 1;
-	}
 	
 	for (p = servinfo; p != NULL; p = p -> ai_next)
 	{
-		if ((sockfd = socket (p -> ai_family, p -> ai_socktype, p -> ai_protocol)) == -1)
+		if ((*sockfd = socket (p -> ai_family, p -> ai_socktype, p -> ai_protocol)) == -1)
 		{
 			perror ("server: socket");
 			continue;
 		}
-		if (setsockopt (sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof (int)) == -1)
+		if (setsockopt (*sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof (int)) == -1)
 		{
 			perror ("setsockopt");
 			exit (1);
 		}
 		
 		int val = SOF_TIMESTAMPING_RAW_HARDWARE;
-		if (setsockopt (sockfd, SOL_SOCKET, SO_TIMESTAMPING, &val, sizeof (int)) == -1)
+		if (setsockopt (*sockfd, SOL_SOCKET, SO_TIMESTAMPING, &val, sizeof (int)) == -1)
 		{
 			perror ("setsockopt timestamp");
 			exit (1);
 		}
-		if (bind (sockfd, p -> ai_addr, p -> ai_addrlen) == -1)
+		if (bind (*sockfd, p -> ai_addr, p -> ai_addrlen) == -1)
 		{
-			close (sockfd);
+			close (*sockfd);
 			perror ("server: bind");
 			continue;
 		}
-		
 		break;
 	}
 	
-	freeaddrinfo (servinfo);
-	
-	if (p == NULL)
+	return p;
+}
+
+//Initialize address information
+void initialize (struct addrinfo *hints)
+{
+	memset (hints, 0, sizeof hints);
+	hints -> ai_family = AF_UNSPEC;
+	hints -> ai_socktype = SOCK_STREAM;
+	hints -> ai_flags = AI_PASSIVE;
+}
+
+//Send message
+void send_message (int sockfd, char *msg)
+{
+	if (send (sockfd, msg, 1000, 0) == -1)
 	{
-		fprintf (stderr, "server: failed to bind\n");
+		perror ("send");
 		exit (0);
 	}
+}
+
+//Receive message
+int receive_message (int sockfd, char *buf)
+{
+	int numbytes;
+	if ((numbytes = recv (sockfd, buf, 1000, 0)) == -1)
+		perror ("recv");
 	
-	if (listen (sockfd, BACKLOG) == -1)
-	{
-		perror ("listen");
-		exit (1);
-	}
+	return numbytes;
+}
+
+//Terminate dead processes
+void kill_dead_processes ()
+{
+	struct sigaction sa;
 	
 	sa.sa_handler = sigchld_handler;
 	sigemptyset (&sa.sa_mask);
@@ -106,6 +114,55 @@ int main ()
 		perror ("sigaction");
 		exit (1);
 	}
+}
+
+//Find current time
+void find_time (struct cmsghdr *cmsg, struct msghdr msg, char buff [])
+{
+	cmsg = CMSG_FIRSTHDR(&msg);
+	struct timespec *ts = (struct timespec *)CMSG_DATA(cmsg);       
+    timespec_get (ts, TIME_UTC);
+    
+	strftime(buff, 1000, "%D %T", gmtime(&ts -> tv_sec));
+}
+
+int main ()
+{
+	int sockfd, new_fd;
+	struct addrinfo hints, *servinfo, *p;
+	struct sockaddr_storage their_addr;
+	socklen_t sin_size;
+	char s [INET6_ADDRSTRLEN];
+	int rv;
+	
+	initialize (&hints);
+	
+	//Get server address
+	if ((rv = getaddrinfo (NULL, PORT, &hints, &servinfo)) != 0)
+	{
+		fprintf (stderr, "getaddrinfo: %s\n", gai_strerror (rv));
+		return 1;
+	}
+	
+	p = connect_to_socket (&sockfd, servinfo);
+	
+	freeaddrinfo (servinfo);
+	
+	//Failed to bind to socket
+	if (p == NULL)
+	{
+		fprintf (stderr, "server: failed to bind\n");
+		exit (0);
+	}
+	
+	//Failed to listen
+	if (listen (sockfd, BACKLOG) == -1)
+	{
+		perror ("listen");
+		exit (1);
+	}
+	
+	kill_dead_processes ();
 	
 	printf ("Server: waiting for connection: \n");
 	
@@ -113,6 +170,7 @@ int main ()
 	{
 		sin_size = sizeof their_addr;
 		
+		//Initialize hardware timestamping variables
 		char data[4096], ctrl[4096];
 		struct msghdr msg;
 		struct cmsghdr *cmsg;
@@ -142,28 +200,17 @@ int main ()
 			close (sockfd);
 			
 			int numbytes;
-			char buffer [1000];
-    		char buff[1000];
+			char buffer [1000], buff [1000];
     		
-			if ((len = recv (new_fd, buffer, 1000, 0)) == -1)
-				perror ("recv");
-			
-			cmsg = CMSG_FIRSTHDR(&msg);
-			struct timespec *ts = (struct timespec *)CMSG_DATA(cmsg);       
-	        timespec_get (ts, TIME_UTC);
-	        
-			strftime(buff, sizeof buff, "%D %T", gmtime(&ts -> tv_sec));
+    		receive_message (new_fd, buffer);
+		
+    		find_time (cmsg, msg, buff);
 
-			
 			sprintf (buff, "%s\nMessage: %s\n",buff, buffer);
 			sprintf (buffer, "Server recieved time: %s", buff);
 			sleep (5);
 			
-			if (send (new_fd, buffer, sizeof (buffer), 0) == -1)
-			{
-				perror ("send");
-				exit (0);
-			}
+			send_message (new_fd, buffer);
 
 			close (new_fd);
 			exit (0);

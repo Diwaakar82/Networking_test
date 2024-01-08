@@ -16,12 +16,89 @@
 #define PORT "8000"			//Port used for connections
 #define MAXDATASIZE 1000
 
+//Return the IPv4 or IPv6 address
 void *get_in_addr (struct sockaddr *sa)
 {
 	if (sa -> sa_family == AF_INET)
 		return &(((struct sockaddr_in *)sa) -> sin_addr);
 		
 	return &(((struct sockaddr_in6 *)sa) -> sin6_addr);
+}
+
+//Connect to a socket
+struct addrinfo *connect_to_socket (int *sockfd, struct addrinfo *servinfo)
+{
+	struct addrinfo *p;
+	
+	for (p = servinfo; p != NULL; p = p -> ai_next)
+	{
+		//Socket not free
+		if ((*sockfd = socket (p -> ai_family, p -> ai_socktype, p -> ai_protocol)) == -1)
+		{
+			perror ("client: socket");
+			continue;
+		}
+		
+		//Set option for hardware timestampping
+		int val = SOF_TIMESTAMPING_RAW_HARDWARE;
+		if (setsockopt (*sockfd, SOL_SOCKET, SO_TIMESTAMPING, &val, sizeof (int)) == -1)
+		{
+			perror ("setsockopt timestamp");
+			exit (1);
+		}
+		
+		//Connect to socket
+		if (connect (*sockfd, p -> ai_addr, p -> ai_addrlen) == -1)
+		{
+			close (*sockfd);
+			perror ("client: connect");
+			continue;
+		}
+		break;
+	}
+	
+	return p;
+}
+
+//Initialize address information
+void initialize (struct addrinfo *hints)
+{
+	memset (hints, 0, sizeof hints);
+	hints -> ai_family = AF_UNSPEC;
+	hints -> ai_socktype = SOCK_STREAM;
+}
+
+//Send message
+void send_message (int sockfd, char *msg)
+{
+	if (send (sockfd, msg, sizeof (msg), 0) == -1)
+	{
+		perror ("send");
+		exit (0);
+	}
+}
+
+//Receive message
+int receive_message (int sockfd, char *buf)
+{
+	int numbytes;
+	if ((numbytes = recv (sockfd, buf, 1000, 0)) == -1)
+	{
+		perror ("recv");
+		exit (0);
+	}
+	
+	return numbytes;
+}
+
+//Find current time
+void find_time (struct cmsghdr *cmsg, struct msghdr msg, char buff [])
+{
+	cmsg = CMSG_FIRSTHDR(&msg);
+	struct timespec *ts = (struct timespec *)CMSG_DATA(cmsg);       
+    timespec_get (ts, TIME_UTC);
+    
+	strftime(buff, 1000, "%D %T", gmtime(&ts -> tv_sec));
 }
 
 int main (int argc, char *argv [])
@@ -32,46 +109,23 @@ int main (int argc, char *argv [])
 	int rv;
 	char s [INET6_ADDRSTRLEN];
 	
+	//Hostname not provided
 	if (argc != 2)
 	{
 		fprintf (stderr, "usage: client hostname\n");
 		exit (1);
 	}
 	
-	memset (&hints, 0, sizeof hints);
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
+	initialize (&hints);
 	
+	//Get server address
 	if ((rv = getaddrinfo (argv [1], PORT, &hints, &servinfo)) != 0)
 	{
 		fprintf (stderr, "getaddrinfo: %s\n", gai_strerror (rv));
 		return 1;
 	}
 	
-	for (p = servinfo; p != NULL; p = p -> ai_next)
-	{
-		if ((sockfd = socket (p -> ai_family, p -> ai_socktype, p -> ai_protocol)) == -1)
-		{
-			perror ("client: socket");
-			continue;
-		}
-		
-		int val = SOF_TIMESTAMPING_RAW_HARDWARE;
-		if (setsockopt (sockfd, SOL_SOCKET, SO_TIMESTAMPING, &val, sizeof (int)) == -1)
-		{
-			perror ("setsockopt timestamp");
-			exit (1);
-		}
-		
-		if (connect (sockfd, p -> ai_addr, p -> ai_addrlen) == -1)
-		{
-			close (sockfd);
-			perror ("client: connect");
-			continue;
-		}
-		
-		break;
-	}
+	p = connect_to_socket (&sockfd, servinfo);
 	
 	if (p == NULL)
 	{
@@ -83,14 +137,12 @@ int main (int argc, char *argv [])
 	
 	printf ("client: connecting to %s\n", s);
 	
+	//Server information not required anymore
 	freeaddrinfo (servinfo);
 	
-	if (send (sockfd, "Hi", 4, 0) == -1)
-	{
-		perror ("send");
-		exit (0);
-	}
+	send_message (sockfd, "Hi");
 	
+	//Initialize hardware timestamping variables
 	char data[4096], ctrl[4096];
 	struct msghdr msg;
 	struct cmsghdr *cmsg;
@@ -105,23 +157,13 @@ int main (int argc, char *argv [])
   	iov.iov_base = data;
     iov.iov_len = sizeof(data);
 	
+	numbytes = receive_message (sockfd, buf);
 	
-	
-	if ((numbytes = recv (sockfd, buf, sizeof (buf), 0)) == -1)
-	{
-		perror ("recv");
-		exit (0);
-	}
-	
+	//Calculate time
 	char buff[1000];
-    		
-	cmsg = CMSG_FIRSTHDR(&msg);
-	struct timespec *ts = (struct timespec *)CMSG_DATA(cmsg);       
-    timespec_get (ts, TIME_UTC);
-    
-	strftime(buff, sizeof buff, "%D %T", gmtime(&ts -> tv_sec));
+    find_time (cmsg, msg, buff);
 	
-	printf ("client recieved Time: %s\n%s\n", buff, buf);
+	printf ("client received Time: %s\n%s\n", buff, buf);
 	close (sockfd);
 	
 	return 0;

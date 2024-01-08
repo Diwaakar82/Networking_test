@@ -101,7 +101,7 @@ int main (int argc, char *argv [])
     strcpy (proxy_port, argv[3]); // proxy port  
     //hostname_to_ip(hostname , ip);  
     
-    printf ("server IP : %s and port %s", ip, port);   
+    printf ("server IP : %s and port %s\n", ip, port);   
     printf ("proxy port is %s", proxy_port);        
     printf ("\n");  
   	//socket variables  
