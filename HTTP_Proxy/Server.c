@@ -4,8 +4,7 @@
 #include <string.h>  
 #include <pthread.h>  
 #include <unistd.h>  
-
-// A thread function  
+ 
 // A thread is created for each accepted client connection  
 void *runSocket(void *vargp)  
 {  
@@ -22,12 +21,8 @@ void *runSocket(void *vargp)
        	if (bytes < 0)  
         	perror ("read");
        	else if (bytes != 0)  
-     	{
-            //send the same data back to client  
-            // similar to echo server  
-            write (c_fd, buffer, sizeof (buffer));  
-            //printf("client fd is : %d\n",c_fd);                    
-            //printf("From client:\n");                    
+     	{ 
+            write (c_fd, buffer, sizeof (buffer));                     
             fputs (buffer, stdout);       
        	}  
         fflush (stdout);  
@@ -35,7 +30,16 @@ void *runSocket(void *vargp)
 	return NULL;  
 }  
 
-// main entry point  
+//Set socket variables
+void set_socket_variables (struct sockaddr_in *sd)
+{
+	memset (sd, 0, sizeof (*sd));  
+	  
+   	sd -> sin_family = AF_INET;  
+   	sd -> sin_port = htons (5010);   
+   	sd -> sin_addr.s_addr = INADDR_ANY;
+}
+ 
 int main ()
 {  
   	int client_fd;  
@@ -43,26 +47,23 @@ int main ()
   	int fd = 0;  
   	
   	struct sockaddr_in server_sd;  
-	// add this line only if server exits when client exits  
+	// Exit server when client exits  
 	signal (SIGPIPE, SIG_IGN);
 	
   	// create a socket  
   	fd = socket (AF_INET, SOCK_STREAM, 0);  
-  	printf ("Server started\n");  
-  	memset (&server_sd, 0, sizeof (server_sd));
+  	printf ("Server started\n");
   	  
   	// set socket variables  
-  	server_sd.sin_family = AF_INET;  
-  	server_sd.sin_port = htons (5010);  
-  	server_sd.sin_addr.s_addr = INADDR_ANY;
+  	set_socket_variables (&server_sd);
   	  
   	// bind socket to the port  
  	bind (fd, (struct sockaddr*)&server_sd, sizeof (server_sd));  
  	
   	// start listening at the given port for new connection requests  
   	listen (fd, SOMAXCONN);  
-  	// continuously accept connections in while(1) loop  
   	
+  	// continuously accept connections in while(1) loop  
   	while (1)  
   	{  
        	// accept any incoming connection  
@@ -72,9 +73,10 @@ int main ()
        	if (client_fd > 0)  
        	{  
             //multithreading variables    
-        	printf ("proxy connected\n");     
-            pthread_t tid;  
-            // pass client fd as a thread parameter  
+        	printf ("proxy connected\n"); 
+        	  
+        	// pass client fd as a thread parameter 
+            pthread_t tid; 
             pthread_create (&tid, NULL, runSocket, (void *) client_fd);   
        	}  
   	}  
