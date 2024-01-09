@@ -46,7 +46,8 @@ int is_ip_in_subnet(char ip_str [], char subnet_str [])
 
     // Perform bitwise AND operation
     uint32_t result = ip & subnet;
-    // Check if the result is equal to the subnet (indicating that the IP is in the subnet)
+    
+    // Check if the result is equal to the ip (indicating that the IP is in the subnet)
     return (result == ip);
 }
 
