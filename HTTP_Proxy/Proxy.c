@@ -25,7 +25,7 @@ void set_socket_variables (struct sockaddr_in *sd, char port [])
    	sd -> sin_addr.s_addr = INADDR_ANY;
 }
 
-//Read and send data from one point to another
+//Read and send data from one point to another	
 void get_data (int source_fd, int dest_fd)
 {
 	char buffer [65535];
@@ -125,13 +125,9 @@ int main (int argc, char *argv [])
       	exit (0);
     }
   
-  	printf ("Proxy created\n");  
-  	memset (&proxy_sd, 0, sizeof (proxy_sd));
-  	  
-  	// set socket variables  
-  	proxy_sd.sin_family = AF_INET;  
-  	proxy_sd.sin_port = htons (atoi (proxy_port));  
-  	proxy_sd.sin_addr.s_addr = INADDR_ANY;
+  	printf ("Proxy created\n"); 
+  	
+  	set_socket_variables (&proxy_sd, proxy_port);
   	  
   	// bind the socket  
   	if((bind (proxy_fd, (struct sockaddr*)&proxy_sd, sizeof (proxy_sd))) < 0)
@@ -161,9 +157,11 @@ int main (int argc, char *argv [])
        	{  
         	//multithreading variables      
             struct serverInfo *item = malloc (sizeof (struct serverInfo));  
-            item -> client_fd = client_fd;  
+            item -> client_fd = client_fd;
+              
             strcpy (item -> ip, ip);  
-            strcpy (item -> port, port);  
+            strcpy (item -> port, port);
+              
             pthread_create (&tid, NULL, runSocket, (void *) item);  
             sleep (1);  
        	}  
