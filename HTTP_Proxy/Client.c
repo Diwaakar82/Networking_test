@@ -56,8 +56,12 @@ int main(int argc, char* argv[])
    
    	set_socket_variables (&client_sd, port);
    	
-   	// connect to proxy server at mentioned port number  
-   	connect (sd, (struct sockaddr *)&client_sd, sizeof (client_sd));  
+   	// connect to proxy server at mentioned port number
+   	if (connect (sd, (struct sockaddr *)&client_sd, sizeof (client_sd)) == -1)
+   	{
+   		close (sd);
+   		exit (0);
+   	}
    	
    	//send and receive data contunuously  
    	while (1)  

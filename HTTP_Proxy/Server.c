@@ -18,7 +18,7 @@ void *runSocket(void *vargp)
        	memset (&buffer, '\0', sizeof (buffer));  
        	bytes = read (c_fd, buffer, sizeof (buffer));
 
-       	if (bytes < 0)  
+       	if (bytes < 0)
         	perror ("read");
        	else if (bytes != 0)  
      	{

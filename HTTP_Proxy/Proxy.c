@@ -25,6 +25,40 @@ void set_socket_variables (struct sockaddr_in *sd, char port [])
    	sd -> sin_addr.s_addr = INADDR_ANY;
 }
 
+// Function to convert an IP address string to a 32-bit unsigned integer
+uint32_t ip_to_uint (char ip []) 
+{
+    uint32_t result = 0;
+    unsigned char octets[4];
+
+    if (sscanf(ip, "%hhu.%hhu.%hhu.%hhu", &octets[0], &octets[1], &octets[2], &octets[3]) == 4)
+        result = (octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3];
+
+    return result;
+}
+
+// Function to check if an IP address is in a subnet
+int is_ip_in_subnet(char ip_str [], char subnet_str []) 
+{
+    // Convert IP address and subnet mask to 32-bit unsigned integers
+    uint32_t ip = ip_to_uint (ip_str);
+    uint32_t subnet = ip_to_uint (subnet_str);
+
+    // Perform bitwise AND operation
+    uint32_t result = ip & subnet;
+    // Check if the result is equal to the subnet (indicating that the IP is in the subnet)
+    return (result == ip);
+}
+
+//Fetch internet address
+void *get_in_addr (struct sockaddr *sa)
+{
+	if (sa -> sa_family == AF_INET)
+		return &(((struct sockaddr_in *) sa) -> sin_addr);
+		
+	return &(((struct sockaddr_in6 *) sa) -> sin6_addr);
+}
+
 //Read and send data from one point to another	
 void get_data (int source_fd, int dest_fd)
 {
@@ -61,12 +95,12 @@ void *runSocket (void *vargp)
   	server_fd = socket (AF_INET, SOCK_STREAM, 0);  
   	if (server_fd < 0)   
   	{
-       	printf ("server socket not created\n");
+       	printf ("\nserver socket not created\n");
        	close (server_fd);
        	close (info -> client_fd);
        	exit (0);
     }
-  	printf ("server socket created\n");
+  	printf ("\nserver socket created\n");
   	       
   	set_socket_variables (&server_sd, info -> port);
   	  
@@ -83,8 +117,7 @@ void *runSocket (void *vargp)
   	  
   	while (1)  
   	{  
-      	//receive data from client  
-      	
+      	//receive data from client
       	get_data (info -> client_fd, server_fd);
       	fflush (stdout);
       	
@@ -112,7 +145,8 @@ int main (int argc, char *argv [])
     printf ("\n");  
   	//socket variables  
   	
-  	int proxy_fd = 0, client_fd = 0;  
+  	int proxy_fd = 0, client_fd = 0;
+  	char ip_mask [100];
   	struct sockaddr_in proxy_sd;
   	  
 	// Server exits when client exits  
@@ -144,15 +178,31 @@ int main (int argc, char *argv [])
        	close (proxy_fd);
      	exit (0);  	
     } 
- 
+    
+    printf ("Enter the IP mask: ");
+    scanf ("%s", ip_mask);
+    
   	printf ("waiting for connection..\n");
-  	  
+
   	//accept all client connections continuously  
   	while (1)  
   	{  
-       	client_fd = accept (proxy_fd, (struct sockaddr*)NULL, NULL);  
+  		struct sockaddr_storage client_addr;
+  		socklen_t sin_size = sizeof (client_addr);
+  		char ip_addr [100];
+  		
+  		//Find client ip address
+       	client_fd = accept (proxy_fd, (struct sockaddr *)&client_addr, &sin_size);  
+       	inet_ntop (client_addr.ss_family, get_in_addr ((struct sockaddr *)&client_addr), ip_addr, sizeof (ip_addr));
+       	
+       	if (!is_ip_in_subnet (ip_addr, ip_mask))
+       	{
+       		printf ("Blocked IP address: %s\n", ip_addr);
+       		close (client_fd);
+       		continue;
+       	}
+       	
        	printf ("client no. %d connected\n", client_fd);
-       	  
        	if (client_fd > 0)  
        	{  
         	//multithreading variables      
