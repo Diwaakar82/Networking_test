@@ -24,7 +24,7 @@ void *runSocket(void *vargp)
      	{
             write (c_fd, buffer, sizeof (buffer));                     
             fputs (buffer, stdout);       
-       	}  
+       	}
         fflush (stdout);  
   	};       
 	return NULL;  
@@ -63,8 +63,8 @@ int main ()
 
   	// start listening at the given port for new connection requests  
   	listen (fd, SOMAXCONN);  
+  	
   	// continuously accept connections in while(1) loop  
-
   	while (1)  
   	{  
        	// accept any incoming connection  

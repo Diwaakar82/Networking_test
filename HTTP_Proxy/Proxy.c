@@ -15,6 +15,12 @@ struct serverInfo
   	char port [100];  
 };  
 
+void error (const char *msg) 
+{
+    perror (msg);
+    exit (0);
+}
+
 //Set socket variables
 void set_socket_variables (struct sockaddr_in *sd, char port [])
 {
@@ -135,7 +141,8 @@ int main (int argc, char *argv [])
  	char port [100], ip [100];  
  	char *hostname = argv [1];  
  	char proxy_port [100];
- 	  
+ 	int n;
+ 	
     // accept arguments from terminal  
     strcpy (ip, argv [1]); // server ip  
     strcpy (port, argv [2]);  // server port  
@@ -148,7 +155,8 @@ int main (int argc, char *argv [])
   	
   	int proxy_fd = 0, client_fd = 0;
   	char ip_mask [100];
-  	struct sockaddr_in proxy_sd;
+  	struct sockaddr_in proxy_sd, target_addr;
+  	struct hostent *proxy_server;
   	  
 	// Server exits when client exits  
 	signal (SIGPIPE, SIG_IGN);
@@ -159,11 +167,12 @@ int main (int argc, char *argv [])
       	printf ("\nFailed to create socket");
       	exit (0);
     }
-  
   	printf ("Proxy created\n"); 
   	
   	set_socket_variables (&proxy_sd, proxy_port);
-  	  
+/*  	proxy_server = gethostbyname ("127.0.0.1");*/
+/*  	bcopy ((char *)proxy_server -> h_addr, (char *)&proxy_sd.sin_addr.s_addr, proxy_server -> h_length);*/
+  	 
   	// bind the socket  
   	if((bind (proxy_fd, (struct sockaddr*)&proxy_sd, sizeof (proxy_sd))) < 0)
   	{ 
@@ -180,8 +189,10 @@ int main (int argc, char *argv [])
      	exit (0);  	
     } 
     
-    printf ("Enter the IP mask: ");
-    scanf ("%s", ip_mask);
+    //Uncomment for ip filtering
+    
+    //printf ("Enter the IP mask: ");
+    //scanf ("%s", ip_mask);
     
   	printf ("waiting for connection..\n");
 
@@ -193,30 +204,124 @@ int main (int argc, char *argv [])
   		char ip_addr [100];
   		
   		//Find client ip address
-       	client_fd = accept (proxy_fd, (struct sockaddr *)&client_addr, &sin_size);  
-       	inet_ntop (client_addr.ss_family, get_in_addr ((struct sockaddr *)&client_addr), ip_addr, sizeof (ip_addr));
+  		
+  		//Uncomment for IP filtering
+  		
+       	if ((client_fd = accept (proxy_fd, (struct sockaddr *)&client_addr, &sin_size)) < 0)
+       	{
+            perror ("Error on accept");
+            exit (0);
+        }
+       	/*inet_ntop (client_addr.ss_family, get_in_addr ((struct sockaddr *)&client_addr), ip_addr, sizeof (ip_addr));
+       	
        	
        	if (!is_ip_in_subnet (ip_addr, ip_mask))
        	{
        		printf ("Blocked IP address: %s\n", ip_addr);
        		close (client_fd);
        		continue;
-       	}
-       	
+       	}*/
+        
        	printf ("client no. %d connected\n", client_fd);
-       	if (client_fd > 0)  
-       	{  
-        	//multithreading variables      
-            struct serverInfo *item = malloc (sizeof (struct serverInfo));  
-            item -> client_fd = client_fd;
-              
-            strcpy (item -> ip, ip);  
-            strcpy (item -> port, port);
-              
-            pthread_create (&tid, NULL, runSocket, (void *) item);  
-            sleep (1);  
-       	}  
-  	}  
+       	char buffer [1000];
+       	
+       	bzero (buffer, sizeof(buffer));
+        n = read (client_fd, buffer, sizeof(buffer) - 1);
+        if (n < 0)
+            error("Error reading from client");
+
+        // Extract the target host and port from the CONNECT request
+        char target_host [256];
+        int target_port, target_sock;
+        sscanf (buffer, "CONNECT %s:%d HTTP/1.1", target_host, &target_port);
+ 		
+        // Connect to the target server
+        target_sock = socket (AF_INET, SOCK_STREAM, 0);
+        if (target_sock < 0)
+            error("Error opening socket to target server");
+
+        // Get the target server information
+        int i = 0;
+        while (target_host [i++] != ':');
+        target_host [i - 1] = '\0';
+        
+        struct hostent *target_server = gethostbyname (target_host);
+        printf ("Target host: %s\n", target_host);
+        
+        if (!target_server)
+        {
+        	printf ("@");
+            error("Error getting target server address");
+        }
+
+		printf ("#");
+        // Configure the target address structure
+        bzero ((char *)&target_addr, sizeof (target_addr));
+        target_addr.sin_family = AF_INET;
+        target_addr.sin_port = htons (target_port);
+        bcopy ((char *)target_server -> h_addr, (char *)&target_addr.sin_addr.s_addr, target_server -> h_length);
+
+        // Connect to the target server
+        if (connect(target_sock, (struct sockaddr *)&target_addr, sizeof(target_addr)) < 0)
+            error("Error connecting to target server");
+
+        // Send a success response to the client
+        const char *success_response = "HTTP/1.1 200 Connection established\r\n\r\n";
+        printf ("Response: %s\n", success_response);
+        write (client_fd, success_response, strlen (success_response));
+
+        // Forward data between the client and the target
+        fd_set read_fds;
+        int max_fd = (client_fd > target_sock) ? client_fd : target_sock;
+
+        while (1) {
+            FD_ZERO (&read_fds);
+            FD_SET (client_fd, &read_fds);
+            FD_SET (target_sock, &read_fds);
+
+            select (max_fd + 1, &read_fds, NULL, NULL, NULL);
+
+            if (FD_ISSET(client_fd, &read_fds)) 
+            {
+                n = read (client_fd, buffer, sizeof(buffer));
+                if (n <= 0)
+                    break;
+
+                write (target_sock, buffer, n);
+            }
+
+            if (FD_ISSET (target_sock, &read_fds)) 
+            {
+                n = read (target_sock, buffer, sizeof(buffer));
+                if (n <= 0)
+                    break;
+
+                write (client_fd, buffer, n);
+            }
+        }
+
+        // Close the sockets
+        close(client_fd);
+        close(target_sock);
+    }
+
+    // Close the proxy server socket (not reached in this example)
+    close(proxy_fd);
+       	
+       	
+       	//Old Code
+/*       	if (client_fd > 0)  */
+/*       	{  */
+/*        	//multithreading variables      */
+/*            struct serverInfo *item = malloc (sizeof (struct serverInfo));  */
+/*            item -> client_fd = client_fd;*/
+/*              */
+/*            strcpy (item -> ip, ip);  */
+/*            strcpy (item -> port, port);*/
+/*              */
+/*            pthread_create (&tid, NULL, runSocket, (void *) item);  */
+/*            sleep (1);  */
+/*       	}  */  
   	return 0;  
 }  
 

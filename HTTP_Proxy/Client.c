@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>  
 
+#define TARGET_HOST "127.0.0.1"
+
 //Set socket variables
 void set_socket_variables (struct sockaddr_in *sd, char port [])
 {
@@ -32,7 +34,9 @@ void send_to_server (int sd)
 	
 	printf ("Type here:");  
     fgets (buffer, sizeof (buffer), stdin);  
-    write (sd, buffer, sizeof (buffer));
+    printf ("buf: %s", buffer);
+    //write (sd, buffer, sizeof (buffer));
+    send (sd, buffer, sizeof (buffer), 0);
 }
 
 // main entry point  
@@ -43,6 +47,7 @@ int main(int argc, char* argv[])
   	//socket variables  
   	char IP [200] = "127.0.0.1";  
   	char port [200]; 
+  	char request [256];
   	int sd;
   	  
   	//Get proxy port
@@ -63,8 +68,15 @@ int main(int argc, char* argv[])
    		exit (0);
    	}
    	
+   	// Construct the HTTP CONNECT request
+    snprintf (request, sizeof (request), "CONNECT %s:%d HTTP/1.1\r\nHost: %s\r\n\r\n", TARGET_HOST, 8050, TARGET_HOST);
+	
+	//Establish HTTP connection
+   	write (sd, request, sizeof (request));
+   	//receive_from_server (sd);
+   	
    	//send and receive data contunuously  
-   	while (1)  
+   	while (1)
     {
     	send_to_server (sd);
         receive_from_server (sd);
