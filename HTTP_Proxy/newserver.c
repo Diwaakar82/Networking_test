@@ -358,7 +358,7 @@ void routing (char route [], char method [], int connfd, char queryData [], char
 void simple_webserver (int connfd)
 {
 	int c = 0;
-	char buff [1024];
+	char buff [2048];
 	char method [10];// to store the method name
 	// default route to be parsed
 	
