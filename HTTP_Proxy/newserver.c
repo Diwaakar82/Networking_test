@@ -419,8 +419,8 @@ void simple_webserver (int connfd)
 	
 	routing (route, method, connfd, queryData, fileName, buff, query);
 	
-	close (connfd); 
-	exit (0);
+/*	close (connfd); */
+/*	exit (0);*/
 }
 
 
@@ -446,7 +446,8 @@ int main()
 		if (!fk)
 		{ 
 			close (sockfd);
-			simple_webserver (connfd);			
+			while (1)
+				simple_webserver (connfd);			
 		} 
 		close (connfd);  
 	} 

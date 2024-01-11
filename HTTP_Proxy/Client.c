@@ -19,7 +19,7 @@ void set_socket_variables (struct sockaddr_in *sd, char port [])
 //Server response 
 void receive_from_server (int sd)
 {
-	char buffer [65535];
+	char buffer [2048];
 	
 	printf ("\nServer response:\n\n");  
     read (sd, buffer, sizeof(buffer));  
@@ -30,12 +30,11 @@ void receive_from_server (int sd)
 //Send data to server
 void send_to_server (int sd)
 {
-	char buffer [65535];
+	char buffer [2048];
 	
 	printf ("Type here:");  
     fgets (buffer, sizeof (buffer), stdin);  
     printf ("buf: %s", buffer);
-    //write (sd, buffer, sizeof (buffer));
     send (sd, buffer, sizeof (buffer), 0);
 }
 

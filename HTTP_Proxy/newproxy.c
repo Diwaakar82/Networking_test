@@ -8,12 +8,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#define PROXY_PORT 5003
+#define PROXY_PORT 5023
 
 
 void get_data (int source_fd, int dest_fd)
 {
-	char buffer [65535];
+	char buffer [2048];
 	int bytes = 0;
 	
 	memset (&buffer, '\0', sizeof (buffer));  
@@ -21,8 +21,7 @@ void get_data (int source_fd, int dest_fd)
    	  
    	if (bytes > 0)  
    	{	
-        write (dest_fd, buffer, sizeof (buffer));                     
-        printf ("From client :\n");                    
+        write (dest_fd, buffer, sizeof (buffer));                                  
         fputs (buffer, stdout);         
    	}
 }
@@ -35,9 +34,10 @@ void *runSocket (int client_fd, int server_fd)
   	while (1)  
   	{  
       	//receive data from client
+      	printf ("From client :\n");
       	get_data (client_fd, server_fd);
-      	fflush (stdout);
       	
+      	printf ("From server :\n");
       	get_data (server_fd, client_fd);      	
        	printf ("\n");
   	};    
