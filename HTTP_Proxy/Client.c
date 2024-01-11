@@ -55,7 +55,7 @@ int main(int argc, char* argv[])
   	fputs (port, stdout);
   	 
    	// create a socket  
-   	if ((sd = socket (AF_INET, SOCK_STREAM, 0)) < 0)    
+   	if ((sd = socket (AF_INET, SOCK_STREAM, 0)) < 0)
     	printf ("socket not created\n");  
    
    	set_socket_variables (&client_sd, port);
@@ -72,7 +72,6 @@ int main(int argc, char* argv[])
 	
 	//Establish HTTP connection
    	write (sd, request, sizeof (request));
-   	//receive_from_server (sd);
    	
    	//send and receive data contunuously  
    	while (1)
