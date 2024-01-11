@@ -180,7 +180,7 @@ int connection_accepting (int sockfd)
 	inet_ntop (their_addr.ss_family, get_in_addr ((struct sockaddr *)&their_addr), s, sizeof (s));
 	
 	//Block connections not coming from the proxy
-	if (strcmp ("127.0.0.1", s) || (get_in_port ((struct sockaddr *)&their_addr) != 5020))
+	if (strcmp ("127.0.0.1", s) || ntohs(get_in_port ((struct sockaddr *)&their_addr)) != 10000)
 	{
 		printf ("Connect via proxy!!\n");
 		close (connfd);

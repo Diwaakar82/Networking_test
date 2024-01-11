@@ -79,14 +79,30 @@ void handle_client(int client_socket)
                 close (client_socket);
                 exit (EXIT_FAILURE);
             }
-
+			
             // Set up the address structure for the destination server
             struct sockaddr_in destination_addr;
             memset (&destination_addr, 0, sizeof (destination_addr));
             destination_addr.sin_family = AF_INET;
             destination_addr.sin_port = htons (port);
             inet_pton (AF_INET, host, &destination_addr.sin_addr);
+            
+            //binding to the port 
+            
+            struct sockaddr_in proxy_addr;
+			memset (&proxy_addr, 0, sizeof (proxy_addr));
+			proxy_addr.sin_family = AF_INET;
+			proxy_addr.sin_port = htons (10000);
+			proxy_addr.sin_addr.s_addr = INADDR_ANY;
 
+			if (bind (destination_socket, (struct sockaddr *)&proxy_addr, sizeof (proxy_addr)) == -1) 
+			{
+				perror ("bind");
+				close (destination_socket);
+				exit (EXIT_FAILURE);
+			}
+			
+			printf ("Socket binded!! %d", proxy_addr.sin_port);
             // Connect to the destination server
             if (connect (destination_socket, (struct sockaddr *)&destination_addr, sizeof (destination_addr)) == -1) 
             {
