@@ -8,7 +8,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#define PROXY_PORT 5023
+#define PROXY_PORT 5020
 
 
 void get_data (int source_fd, int dest_fd)
@@ -126,13 +126,20 @@ void sigchld_handler (int s)
 
 int main () 
 {
-    int proxy_socket = socket (AF_INET, SOCK_STREAM, 0);
+    int yes = 1, proxy_socket = socket (AF_INET, SOCK_STREAM, 0);
+    
     if (proxy_socket == -1) 
     {
         perror ("socket");
         exit (EXIT_FAILURE);
     }
-
+	
+	if (setsockopt (proxy_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1)
+	{
+		perror ("setsockopt");
+		exit (1);	
+	}
+		
     struct sockaddr_in proxy_addr;
     memset (&proxy_addr, 0, sizeof (proxy_addr));
     proxy_addr.sin_family = AF_INET;
@@ -169,7 +176,7 @@ int main ()
             perror ("accept");
             continue;
         }
-
+		
         pid_t pid = fork ();
         if (pid == -1) 
         {
