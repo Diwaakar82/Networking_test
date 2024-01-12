@@ -44,7 +44,6 @@ int main(int argc, char* argv[])
 	struct sockaddr_in client_sd;
 		
   	//socket variables  
-  	char IP [200] = "127.0.0.1";  
   	char port [200]; 
   	char request [256];
   	int sd;
