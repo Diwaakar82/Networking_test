@@ -183,7 +183,7 @@ int main ()
 		
 		sprintf (buff, "%s\nMessage: %s\n",buff, buffer);
 		sprintf (buffer, "Server recieved time: %s", buff);
-/*			sleep (5);*/
+		sleep (5);
 		
 		send_message (new_fd, buff);
 		
