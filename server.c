@@ -32,6 +32,15 @@ struct addrinfo *connect_to_socket (int *sockfd, struct addrinfo *servinfo)
 	
 	for (p = servinfo; p != NULL; p = p -> ai_next)
 	{
+	    printf("ai_flags: %d\n", p -> ai_flags);
+		printf("ai_family: %d\n", p -> ai_family);
+		printf("ai_socktype: %d\n", p -> ai_socktype);
+		printf("ai_protocol: %d\n", p -> ai_protocol);
+		printf("ai_addrlen: %zu\n", p -> ai_addrlen);
+		printf("ai_addr: %p\n", (void*)p -> ai_addr);
+		printf("ai_canonname: %s\n", p -> ai_canonname);
+		printf("ai_next: %p\n", (void*)p -> ai_next);
+	    
 		if ((*sockfd = socket (p -> ai_family, p -> ai_socktype, p -> ai_protocol)) == -1)
 		{
 			perror ("server: socket");
@@ -55,7 +64,7 @@ struct addrinfo *connect_to_socket (int *sockfd, struct addrinfo *servinfo)
 			perror ("server: bind");
 			continue;
 		}
-		break;
+		
 	}
 	
 	return p;
@@ -122,14 +131,7 @@ int main ()
 	p = connect_to_socket (&sockfd, servinfo);
 	
 	freeaddrinfo (servinfo);
-	
-	//Failed to bind to socket
-	if (p == NULL)
-	{
-		fprintf (stderr, "server: failed to bind\n");
-		exit (0);
-	}
-	
+
 	//Failed to listen
 	if (listen (sockfd, BACKLOG) == -1)
 	{
@@ -183,7 +185,7 @@ int main ()
 		sprintf (buffer, "Server recieved time: %s", buff);
 /*			sleep (5);*/
 		
-		send_message (new_fd, s);
+		send_message (new_fd, buff);
 		
 		close (new_fd);
 	}
