@@ -9,21 +9,11 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <sys/wait.h>
-#include <signal.h>
 #include <time.h>
 #include <linux/net_tstamp.h>
 
 #define PORT "8000"			//Port used for connections
-#define BACKLOG 10			//Pending connections queue can hold
-
-//Handle child processes
-void sigchld_handler (int s)
-{
-	int saved_errno = errno;
-	while (waitpid (-1, NULL, WNOHANG) > 0);
-	
-	errno = saved_errno;
-}
+#define BACKLOG 1			//Pending connections queue can hold
 
 //Fetch internet address
 void *get_in_addr (struct sockaddr *sa)
@@ -100,21 +90,6 @@ int receive_message (int sockfd, char *buf)
 	return numbytes;
 }
 
-//Terminate dead processes
-void kill_dead_processes ()
-{
-	struct sigaction sa;
-	
-	sa.sa_handler = sigchld_handler;
-	sigemptyset (&sa.sa_mask);
-	sa.sa_flags = SA_RESTART;
-	
-	if (sigaction (SIGCHLD, &sa, NULL) == -1)
-	{
-		perror ("sigaction");
-		exit (1);
-	}
-}
 
 //Find current time
 void find_time (struct cmsghdr *cmsg, struct msghdr msg, char buff [])
@@ -162,7 +137,7 @@ int main ()
 		exit (1);
 	}
 	
-	kill_dead_processes ();
+ 	/*	kill_dead_processes ();*/
 	
 	printf ("Server: waiting for connection: \n");
 	
@@ -194,27 +169,21 @@ int main ()
 		
 		inet_ntop (their_addr.ss_family, get_in_addr ((struct sockaddr *)&their_addr), s, sizeof s);
 		printf ("Server: got connection from %s\n", s);
-		
-		if (!fork ())
-		{
-			close (sockfd);
 			
-			int numbytes;
-			char buffer [1000], buff [1000];
-    		
-    		receive_message (new_fd, buffer);
+		int numbytes;
+		char buffer [1000], buff [1000];
 		
-    		find_time (cmsg, msg, buff);
-
-			sprintf (buff, "%s\nMessage: %s\n",buff, buffer);
-			sprintf (buffer, "Server recieved time: %s", buff);
-			sleep (5);
-			
-			send_message (new_fd, buffer);
-
-			close (new_fd);
-			exit (0);
-		}
+		receive_message (new_fd, buffer);
+		
+		printf ("Messsage: %s\n", buffer);
+		scanf ("%d", &numbytes);
+		find_time (cmsg, msg, buff);
+		
+		sprintf (buff, "%s\nMessage: %s\n",buff, buffer);
+		sprintf (buffer, "Server recieved time: %s", buff);
+/*			sleep (5);*/
+		
+		send_message (new_fd, s);
 		
 		close (new_fd);
 	}

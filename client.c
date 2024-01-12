@@ -163,6 +163,8 @@ int main (int argc, char *argv [])
 	char buff[1000];
     find_time (cmsg, msg, buff);
 	
+	int x;
+	scanf ("%d", &x);
 	printf ("client received Time: %s\n%s\n", buff, buf);
 	close (sockfd);
 	
