@@ -11,7 +11,6 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <time.h>
-#include <linux/net_tstamp.h>
 
 #define PORT "8000"			//Port used for connections
 #define MAXDATASIZE 1000
@@ -38,14 +37,14 @@ struct addrinfo *connect_to_socket (int *sockfd, struct addrinfo *servinfo)
 			perror ("client: socket");
 			continue;
 		}
-		
-		//Set option for hardware timestampping
-		int val = SOF_TIMESTAMPING_RAW_HARDWARE;
-		if (setsockopt (*sockfd, SOL_SOCKET, SO_TIMESTAMPING, &val, sizeof (int)) == -1)
-		{
-			perror ("setsockopt timestamp");
-			exit (1);
-		}
+/*		*/
+/*		//Set option for hardware timestampping*/
+/*		int val = SOF_TIMESTAMPING_RAW_HARDWARE;*/
+/*		if (setsockopt (*sockfd, SOL_SOCKET, SO_TIMESTAMPING, &val, sizeof (int)) == -1)*/
+/*		{*/
+/*			perror ("setsockopt timestamp");*/
+/*			exit (1);*/
+/*		}*/
 		
 		//Connect to socket
 		if (connect (*sockfd, p -> ai_addr, p -> ai_addrlen) == -1)
@@ -63,9 +62,11 @@ struct addrinfo *connect_to_socket (int *sockfd, struct addrinfo *servinfo)
 //Initialize address information
 void initialize (struct addrinfo *hints)
 {
-	memset (hints, 0, sizeof hints);
+	memset (hints, 0, sizeof *hints);
+	
 	hints -> ai_family = AF_UNSPEC;
 	hints -> ai_socktype = SOCK_STREAM;
+	hints -> ai_flags = AI_PASSIVE;
 }
 
 //Send message
@@ -91,15 +92,15 @@ int receive_message (int sockfd, char *buf)
 	return numbytes;
 }
 
-//Find current time
-void find_time (struct cmsghdr *cmsg, struct msghdr msg, char buff [])
-{
-	cmsg = CMSG_FIRSTHDR(&msg);
-	struct timespec *ts = (struct timespec *)CMSG_DATA(cmsg);       
-    timespec_get (ts, TIME_UTC);
-    
-	strftime(buff, 1000, "%D %T", gmtime(&ts -> tv_sec));
-}
+/*//Find current time*/
+/*void find_time (struct cmsghdr *cmsg, struct msghdr msg, char buff [])*/
+/*{*/
+/*	cmsg = CMSG_FIRSTHDR(&msg);*/
+/*	struct timespec *ts = (struct timespec *)CMSG_DATA(cmsg);       */
+/*    timespec_get (ts, TIME_UTC);*/
+/*    */
+/*	strftime(buff, 1000, "%D %T", gmtime(&ts -> tv_sec));*/
+/*}*/
 
 int main (int argc, char *argv [])
 {
@@ -142,30 +143,13 @@ int main (int argc, char *argv [])
 	
 	send_message (sockfd, "Hi");
 	
-	//Initialize hardware timestamping variables
-	char data[4096], ctrl[4096];
-	struct msghdr msg;
-	struct cmsghdr *cmsg;
-	struct iovec iov;
-	ssize_t len;
-	
-	memset(&msg, 0, sizeof(msg));
-    msg.msg_iov = &iov;
-    msg.msg_iovlen = 1;
-    msg.msg_control = ctrl;
-    msg.msg_controllen = sizeof(ctrl);
-  	iov.iov_base = data;
-    iov.iov_len = sizeof(data);
-	
 	numbytes = receive_message (sockfd, buf);
 	
-	//Calculate time
-	char buff[1000];
-    find_time (cmsg, msg, buff);
-	
-	int x;
-	scanf ("%d", &x);
-	printf ("client received Time: %s\n%s\n", buff, buf);
+	//Find system time
+	time_t current_time;
+	time (&current_time);
+
+	printf ("Client received Time: %s%s\n", ctime (&current_time), buf);
 	close (sockfd);
 	
 	return 0;
