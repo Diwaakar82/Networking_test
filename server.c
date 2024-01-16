@@ -13,7 +13,7 @@
 #include <sys/poll.h>
 
 #define PORT "8001"			//Port used for connections
-#define BACKLOG 1			//Pending connections queue can hold
+#define BACKLOG 2			//Pending connections queue can hold
 
 //Fetch internet address
 void *get_in_addr (struct sockaddr *sa)
@@ -129,84 +129,45 @@ int main ()
 			continue;
 		}
 		
+		//Set polling variables
 		ufds [0].fd = sockfd;
-		ufds [0].events = POLLIN | POLLPRI | POLLOUT;
+		ufds [0].events = POLLIN;
+		ufds [0].revents = 0;
 		
 		ufds [1].fd = new_fd;
-		ufds [1].events = POLLIN | POLLOUT | POLLPRI;
+		ufds [1].events = POLLIN;
+		ufds [1].revents = 0;
 		
-/*		printf ("SOcket: %d\n", ufds [1].fd);*/
-		rv = poll (ufds, 2, -1);
+		//Start polling
+		rv = poll (ufds, 2, 2000);
 		
 		if (rv == -1) 
-			perror ("poll"); // error occurred in poll()
+			perror ("poll");
 		else if (rv == 0)
 			printf ("Timeout occurred! No data after 2 seconds.\n");
-/*		else */
-/*		{*/
-/*			// check for events on s1:*/
-/*			if (ufds [0].revents & POLLIN)*/
-/*			{*/
-/*				printf ("&");*/
-/*				receive_message (sockfd, buffer);*/
-/*			}*/
-/*	*/
-/*			if (ufds [0].revents & POLLPRI)*/
-/*			{*/
-/*				printf ("()");*/
-/*				receive_message (sockfd, buffer);*/
-/*			}*/
-/*	*/
-/*			// check for events on s2:*/
-/*			if (ufds [1].revents & POLLIN)*/
-/*			{*/
-/*				printf ("@");*/
-/*				receive_message (new_fd, buffer);*/
-/*			}*/
-/*				*/
-/*			if (ufds [1].revents & POLLPRI)*/
-/*			{*/
-/*				printf ("$");*/
-/*				receive_message (new_fd, buffer);*/
-/*			}*/
-/*			*/
-/*			if (ufds [1].revents & POLLOUT)*/
-/*			{*/
-/*				printf ("#");*/
-/*				send_message (new_fd, buffer);*/
-/*			}*/
-/*		}*/
 		
 		inet_ntop (their_addr.ss_family, get_in_addr ((struct sockaddr *)&their_addr), s, sizeof s);
 		printf ("Server: got connection from %s\n", s);
 		
-		printf ("revents: %d, pollin: %d\n", ufds [1].revents, POLLIN);
-		
+		//Read incoming message
 		if (ufds [1].revents & POLLIN)
-		{
-			printf ("@");
 			receive_message (new_fd, buffer);
-		}
 		printf ("Messsage: %s\n", buffer);
 		
 		//Find system time
 		time_t current_time;
 		time (&current_time);
 		
+		//Modify received message
 		memset (buff, '\0', 1000);	
-
 		sprintf (buff, "%sMessage: %s\n",ctime (&current_time), buffer);
 		sprintf (buffer, "Server recieved time: %s", buff);
 		
 		sleep (5);
 		
-		if (ufds [1].revents & POLLOUT)
-		{
-			printf ("#%d\n", ufds [1].fd);
-/*			printf ("revents: %d, pollin: %d\n", ufds [1].reevents, POLLIN);*/
-			send_message (new_fd, buffer);
-			memset (buffer, '\0', 1000);
-		}
+		//Send message to client
+		send_message (new_fd, buffer);
+		memset (buffer, '\0', 1000);
 		
 		close (new_fd);
 	}
