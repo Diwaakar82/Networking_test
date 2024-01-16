@@ -48,10 +48,10 @@ void getalldata (int client_socket, char content [1024], char fileName [100])
 	    while (fgets(line,100,file))
 	    {
 			char line2[100];
-			sprintf(line2,"<li>%s</li>",line);
+			sprintf(line2,"<li>\n%s</li>",line);
 			strcat(content,line2);
 	    }
-	    content [strlen (content) - 1] = '\0';
+	    content [strlen (content)] = '\0';
 	    fclose (file);
 }
 
@@ -67,17 +67,9 @@ void handle_get_request (int client_socket, char fileName [100])
     
     //create html content for displaying data
     char html_content [1024];
-    sprintf (html_content, "<html><body><ul>%s</ul></body></html>", buff);
+    sprintf (html_content, "<html>\n<body>\n<ul>\n%s</ul>\n</body>\n</html>", buff);
   
     send_response (client_socket, "200 OK", "text/html", html_content);
-}
-
-//it helps us to handle all the dead process which was created with the fork system call.
-void sigchld_handler(int s)
-{
-	int saved_errno = errno;
-	while (waitpid (-1, NULL, WNOHANG) > 0);
-	errno = saved_errno;
 }
 
 // give IPV4 or IPV6 port number based on the family set in the sa
@@ -191,21 +183,6 @@ int connection_accepting (int sockfd)
 	return connfd;
 }
 
-// reap all dead processes that are created as child processes
-void signal_handler ()
-{
-	struct sigaction sa;
-	sa.sa_handler = sigchld_handler; 
-	sigemptyset (&sa.sa_mask);
-	sa.sa_flags = SA_RESTART;
-	
-	if (sigaction (SIGCHLD, &sa, NULL) == -1) 
-	{
-		perror ("sigaction");
-		exit (1);
-	}
-}
-
 //simple webserver with support to http methods such as get as well as post (basic functionalities)
 void simple_webserver (int connfd)
 {
@@ -229,7 +206,7 @@ void simple_webserver (int connfd)
 	sscanf (buff, "%s /%s", method, route);
 	
 	//GET without query parameters		
-	if (strcmp(method,"GET") == 0)
+	if (strcmp (method, "GET") == 0)
 		handle_get_request (connfd, fileName);
 	else
 		send_response (connfd, "501 Not Implemented", "text/plain", "Method Not Implemented");
@@ -241,24 +218,16 @@ int main()
 	
 	//server creation .
 	sockfd = server_creation ();
-	signal_handler ();	
 
 	printf("server: waiting for connections...\n");
 	while (1)
 	{ 
-
 		connfd = connection_accepting (sockfd);
 		if (connfd == -1)
 			continue;
   		
-  		//Create child process to handle client
-		int fk = fork ();
-		if (!fk)
-		{ 
-			close (sockfd);
-			while (1)
-				simple_webserver (connfd);			
-		} 
+		while (1)
+			simple_webserver (connfd);			
 		close (connfd);  
 	} 
 	close (sockfd); 

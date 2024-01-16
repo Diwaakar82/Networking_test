@@ -34,7 +34,6 @@ void send_to_server (int sd)
 	
 	printf ("Type here:");  
     fgets (buffer, sizeof (buffer), stdin);  
-    printf ("buf: %s", buffer);
     send (sd, buffer, sizeof (buffer), 0);
 }
 
@@ -71,6 +70,11 @@ int main(int argc, char* argv[])
 	
 	//Establish HTTP connection
    	write (sd, request, sizeof (request));
+   	
+   	char response [256];
+   	read (sd, response, sizeof (response));
+   	
+   	printf ("Response: %s\n", response);
    	
    	//send and receive data contunuously  
    	while (1)
