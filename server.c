@@ -10,8 +10,9 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <time.h>
+#include <sys/poll.h>
 
-#define PORT "8000"			//Port used for connections
+#define PORT "8001"			//Port used for connections
 #define BACKLOG 1			//Pending connections queue can hold
 
 //Fetch internet address
@@ -76,6 +77,8 @@ void send_message (int sockfd, char *msg)
 int receive_message (int sockfd, char *buf)
 {
 	int numbytes;
+	memset (buf, 0, 1000);
+	
 	if ((numbytes = recv (sockfd, buf, 1000, 0)) == -1)
 		perror ("recv");
 	
@@ -89,6 +92,7 @@ int main ()
 	struct sockaddr_storage their_addr;
 	socklen_t sin_size;
 	char s [INET6_ADDRSTRLEN];
+	struct pollfd ufds [2];
 	int rv;
 	
 	initialize (&hints);
@@ -112,10 +116,11 @@ int main ()
 	}
 	
 	printf ("Server: waiting for connection: \n");
-	
+
 	while (1)
 	{
 		sin_size = sizeof their_addr;
+        char buffer [1000], buff [1000];
         
 		new_fd = accept (sockfd, (struct sockaddr *)&their_addr, &sin_size);
 		if (new_fd == -1)
@@ -124,24 +129,84 @@ int main ()
 			continue;
 		}
 		
+		ufds [0].fd = sockfd;
+		ufds [0].events = POLLIN | POLLPRI | POLLOUT;
+		
+		ufds [1].fd = new_fd;
+		ufds [1].events = POLLIN | POLLOUT | POLLPRI;
+		
+/*		printf ("SOcket: %d\n", ufds [1].fd);*/
+		rv = poll (ufds, 2, -1);
+		
+		if (rv == -1) 
+			perror ("poll"); // error occurred in poll()
+		else if (rv == 0)
+			printf ("Timeout occurred! No data after 2 seconds.\n");
+/*		else */
+/*		{*/
+/*			// check for events on s1:*/
+/*			if (ufds [0].revents & POLLIN)*/
+/*			{*/
+/*				printf ("&");*/
+/*				receive_message (sockfd, buffer);*/
+/*			}*/
+/*	*/
+/*			if (ufds [0].revents & POLLPRI)*/
+/*			{*/
+/*				printf ("()");*/
+/*				receive_message (sockfd, buffer);*/
+/*			}*/
+/*	*/
+/*			// check for events on s2:*/
+/*			if (ufds [1].revents & POLLIN)*/
+/*			{*/
+/*				printf ("@");*/
+/*				receive_message (new_fd, buffer);*/
+/*			}*/
+/*				*/
+/*			if (ufds [1].revents & POLLPRI)*/
+/*			{*/
+/*				printf ("$");*/
+/*				receive_message (new_fd, buffer);*/
+/*			}*/
+/*			*/
+/*			if (ufds [1].revents & POLLOUT)*/
+/*			{*/
+/*				printf ("#");*/
+/*				send_message (new_fd, buffer);*/
+/*			}*/
+/*		}*/
+		
 		inet_ntop (their_addr.ss_family, get_in_addr ((struct sockaddr *)&their_addr), s, sizeof s);
 		printf ("Server: got connection from %s\n", s);
-
-		char buffer [1000], buff [1000];
 		
-		receive_message (new_fd, buffer);
+		printf ("revents: %d, pollin: %d\n", ufds [1].revents, POLLIN);
+		
+		if (ufds [1].revents & POLLIN)
+		{
+			printf ("@");
+			receive_message (new_fd, buffer);
+		}
 		printf ("Messsage: %s\n", buffer);
 		
 		//Find system time
 		time_t current_time;
 		time (&current_time);
 		
+		memset (buff, '\0', 1000);	
+
 		sprintf (buff, "%sMessage: %s\n",ctime (&current_time), buffer);
 		sprintf (buffer, "Server recieved time: %s", buff);
 		
 		sleep (5);
 		
-		send_message (new_fd, buffer);
+		if (ufds [1].revents & POLLOUT)
+		{
+			printf ("#%d\n", ufds [1].fd);
+/*			printf ("revents: %d, pollin: %d\n", ufds [1].reevents, POLLIN);*/
+			send_message (new_fd, buffer);
+			memset (buffer, '\0', 1000);
+		}
 		
 		close (new_fd);
 	}

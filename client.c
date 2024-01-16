@@ -12,7 +12,7 @@
 #include <signal.h>
 #include <time.h>
 
-#define PORT "8000"			//Port used for connections
+#define PORT "8001"			//Port used for connections
 #define MAXDATASIZE 1000
 
 //Return the IPv4 or IPv6 address
@@ -37,15 +37,6 @@ struct addrinfo *connect_to_socket (int *sockfd, struct addrinfo *servinfo)
 			perror ("client: socket");
 			continue;
 		}
-/*		*/
-/*		//Set option for hardware timestampping*/
-/*		int val = SOF_TIMESTAMPING_RAW_HARDWARE;*/
-/*		if (setsockopt (*sockfd, SOL_SOCKET, SO_TIMESTAMPING, &val, sizeof (int)) == -1)*/
-/*		{*/
-/*			perror ("setsockopt timestamp");*/
-/*			exit (1);*/
-/*		}*/
-		
 		//Connect to socket
 		if (connect (*sockfd, p -> ai_addr, p -> ai_addrlen) == -1)
 		{
@@ -92,16 +83,6 @@ int receive_message (int sockfd, char *buf)
 	return numbytes;
 }
 
-/*//Find current time*/
-/*void find_time (struct cmsghdr *cmsg, struct msghdr msg, char buff [])*/
-/*{*/
-/*	cmsg = CMSG_FIRSTHDR(&msg);*/
-/*	struct timespec *ts = (struct timespec *)CMSG_DATA(cmsg);       */
-/*    timespec_get (ts, TIME_UTC);*/
-/*    */
-/*	strftime(buff, 1000, "%D %T", gmtime(&ts -> tv_sec));*/
-/*}*/
-
 int main (int argc, char *argv [])
 {
 	int sockfd, numbytes;
@@ -141,8 +122,10 @@ int main (int argc, char *argv [])
 	//Server information not required anymore
 	freeaddrinfo (servinfo);
 	
-	send_message (sockfd, "Hi");
+	/*	int x;*/
+	/*	scanf ("%d", &x);*/
 	
+	send_message (sockfd, "Hi");	
 	numbytes = receive_message (sockfd, buf);
 	
 	//Find system time
