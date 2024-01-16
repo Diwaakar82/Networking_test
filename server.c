@@ -12,7 +12,7 @@
 #include <time.h>
 #include <sys/poll.h>
 
-#define PORT "8001"			//Port used for connections
+#define PORT "8000"			//Port used for connections
 #define BACKLOG 2			//Pending connections queue can hold
 
 //Fetch internet address
@@ -146,6 +146,7 @@ int main ()
 		else if (rv == 0)
 			printf ("Timeout occurred! No data after 2 seconds.\n");
 		
+		//Find server IP address
 		inet_ntop (their_addr.ss_family, get_in_addr ((struct sockaddr *)&their_addr), s, sizeof s);
 		printf ("Server: got connection from %s\n", s);
 		

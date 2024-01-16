@@ -12,7 +12,7 @@
 #include <signal.h>
 #include <time.h>
 
-#define PORT "8001"			//Port used for connections
+#define PORT "8000"			//Port used for connections
 #define MAXDATASIZE 1000
 
 //Return the IPv4 or IPv6 address
@@ -116,14 +116,10 @@ int main (int argc, char *argv [])
 	}
 	
 	inet_ntop (p -> ai_family, get_in_addr ((struct sockaddr *) p -> ai_addr), s, sizeof s);
-	
 	printf ("client: connecting to %s\n", s);
 	
 	//Server information not required anymore
 	freeaddrinfo (servinfo);
-	
-	/*	int x;*/
-	/*	scanf ("%d", &x);*/
 	
 	send_message (sockfd, "Hi");	
 	numbytes = receive_message (sockfd, buf);
