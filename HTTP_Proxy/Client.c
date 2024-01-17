@@ -22,7 +22,7 @@ void receive_from_server (int sd)
 	char buffer [2048];
 	
 	printf ("\nServer response:\n\n");  
-    read (sd, buffer, sizeof(buffer));  
+    recv (sd, buffer, sizeof(buffer), 0);  
     fputs (buffer, stdout);  
     printf("\n"); 
 }

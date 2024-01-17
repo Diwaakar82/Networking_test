@@ -194,6 +194,12 @@ int connection_accepting (int sockfd, struct pollfd **poll_fds, int *max_fds, in
 	return connfd;
 }
 
+void cleanup (struct pollfd *poll_fds)
+{
+	close (poll_fds -> fd);
+	poll_fds -> fd *= -1;
+}
+
 //simple webserver with support to http methods such as get as well as post (basic functionalities)
 void simple_webserver (struct pollfd *poll_fds)
 {
@@ -207,7 +213,14 @@ void simple_webserver (struct pollfd *poll_fds)
 	char route [100];//route data
 	
 	// receiving the message from the client either get request or post request
-	if ((c = recv (connfd, buff, sizeof (buff), 0)) == -1)
+	c = recv (connfd, buff, sizeof (buff), 0);
+	if (c == 0)
+	{
+		printf ("CLient closed\n");
+		cleanup (poll_fds);
+		return;
+	}
+	if (c < 0)
 	{
 		printf ("msg not received\n"); 
 		exit (0); 

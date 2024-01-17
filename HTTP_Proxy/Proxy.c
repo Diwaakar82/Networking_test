@@ -318,13 +318,14 @@ int connection_accepting (int sockfd, struct pollfd **poll_fds, int *max_fds, in
 	inet_ntop (their_addr.ss_family, get_in_addr ((struct sockaddr *)&their_addr), s, sizeof (s));
 	
 	//////IP filtering
-		
-   	/*if (!is_ip_in_subnet (ip_addr, ip_mask))
+   	if (!is_ip_in_subnet (s + 7, ip_mask))
    	{
-   		printf ("Blocked IP address: %s\n", ip_addr);
-   		close (client_socket);
-   		continue;
-   	}*/
+   		printf ("Blocked IP address: %s\n", s);
+   		close (sockfd);
+   		close (connfd);
+   		
+   		return;
+   	}
    	
    	//////IP Filtering above
 	
@@ -353,8 +354,8 @@ int main ()
 	num_fds = 1;
 	
 	//IP filtering
-	//printf ("Enter the IP mask: ");
-    //scanf ("%s", ip_mask);
+	printf ("Enter the IP mask: ");
+    scanf ("%s", ip_mask);
 	
     printf ("Proxy server is running on port %s\n", PROXY_PORT);
 	
