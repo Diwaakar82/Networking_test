@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <time.h> 
+#include <sys/poll.h>
 
 #define SA struct sockaddr 
 #define BACKLOG 10 
@@ -132,15 +133,7 @@ int server_creation()
 			perror ("server: bind");
 			continue;
 		}
-		break;
 	}
-
-	if (p == NULL)
-	{
-		fprintf (stderr, "server: failed to bind\n");
-		exit (1);	
-	}
-	
 
 	// server will be listening with maximum simultaneos connections of BACKLOG
 	if (listen (sockfd, BACKLOG) == -1)
@@ -152,7 +145,7 @@ int server_creation()
 }
 
 //connection establishment with the client
-int connection_accepting (int sockfd)
+int connection_accepting (int sockfd, struct pollfd **poll_fds, int *max_fds, int *num_fds)
 {
 	int connfd;
 	struct sockaddr_storage their_addr;
@@ -168,32 +161,51 @@ int connection_accepting (int sockfd)
 		return -1;
 	} 
 	
+	if (*num_fds == *max_fds) 
+	{
+        *poll_fds = realloc (*poll_fds, (*max_fds + 5) * sizeof (struct pollfd));
+        if (*poll_fds == NULL) 
+        {
+            perror ("realloc");
+            exit (1);
+        }
+
+        *max_fds += 5;
+    }
+	
 	//printing the client name
 	inet_ntop (their_addr.ss_family, get_in_addr ((struct sockaddr *)&their_addr), s, sizeof (s));
 	
 	//Block connections not coming from the proxy
-	if (strcmp ("127.0.0.1", s) || ntohs(get_in_port ((struct sockaddr *)&their_addr)) != 10000)
+	if (strcmp ("::ffff:127.0.0.1", s) || ntohs(get_in_port ((struct sockaddr *)&their_addr)) != 10000)
 	{
 		printf ("Connect via proxy!!\n");
 		close (connfd);
 		return -1;
 	}
+
+	(*num_fds)++;
+
+    ((*poll_fds) + *num_fds - 1) -> fd = connfd;
+    ((*poll_fds) + *num_fds - 1) -> events = POLLIN;
+    ((*poll_fds) + *num_fds - 1) -> revents = 0;
 	
 	printf ("\nserver: got connection from %s\n", s);
 	return connfd;
 }
 
 //simple webserver with support to http methods such as get as well as post (basic functionalities)
-void simple_webserver (int connfd)
+void simple_webserver (struct pollfd *poll_fds)
 {
 	int c = 0;
+	int connfd = poll_fds -> fd;
 	char buff [2048];
 	char method [10];// to store the method name
 	
 	// default route to be parsed
 	char fileName [100] = "output.txt";
 	char route [100];//route data
-
+	
 	// receiving the message from the client either get request or post request
 	if ((c = recv (connfd, buff, sizeof (buff), 0)) == -1)
 	{
@@ -215,20 +227,48 @@ void simple_webserver (int connfd)
 int main()
 { 
 	int sockfd,connfd; 
+	struct pollfd *poll_fds;
+	int max_fds = 0, num_fds = 0, nfds;
 	
-	//server creation .
+	//server creation
 	sockfd = server_creation ();
-
+	
+	if ((poll_fds = malloc (5 * sizeof (struct pollfd))) == NULL)
+	{
+		perror ("malloc");
+		exit (0);
+	}
+	max_fds = 5;
+	
+	poll_fds -> fd = sockfd;
+	poll_fds -> events = POLLIN;
+	poll_fds -> revents = 0;
+	num_fds = 1;
+	
 	printf("server: waiting for connections...\n");
 	while (1)
 	{ 
-		connfd = connection_accepting (sockfd);
-		if (connfd == -1)
-			continue;
-  		
-		while (1)
-			simple_webserver (connfd);			
-		close (connfd);  
+		nfds = num_fds;
+		if (poll (poll_fds, nfds, -1) == -1)
+		{
+			perror ("poll");
+			exit (0);
+		}
+		
+		for (int fd = 0; fd < nfds; fd++)
+		{
+			if ((poll_fds + fd) -> fd <= 0)
+				continue;
+				
+			if (((poll_fds + fd) -> revents & POLLIN) == POLLIN)
+			{
+				if ((poll_fds + fd) -> fd == sockfd)
+					connection_accepting (sockfd, &poll_fds, &max_fds, &num_fds);
+				else
+					simple_webserver (poll_fds + fd);
+			}
+			
+		}	 
 	} 
 	close (sockfd); 
 	return 0;

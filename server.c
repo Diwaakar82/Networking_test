@@ -139,7 +139,7 @@ int main ()
 		ufds [1].revents = 0;
 		
 		//Start polling
-		rv = poll (ufds, 2, 2000);
+		rv = poll (ufds, 2, -1);
 		
 		if (rv == -1) 
 			perror ("poll");

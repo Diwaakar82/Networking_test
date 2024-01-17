@@ -49,30 +49,35 @@ int main(int argc, char* argv[])
   	  
   	//Get proxy port
   	printf ("\nEnter a port:");  
-  	fgets (port, sizeof ("5000\n") + 1, stdin);  
-  	fputs (port, stdout);
+  	fgets (port, sizeof ("5000\n") + 1, stdin);
   	 
    	// create a socket  
    	if ((sd = socket (AF_INET, SOCK_STREAM, 0)) < 0)
+   	{
     	printf ("socket not created\n");  
-   
+    	exit (0);
+    }
+   	printf ("Socket created...\n");
+   	
    	set_socket_variables (&client_sd, port);
    	
    	// connect to proxy server at mentioned port number
    	if (connect (sd, (struct sockaddr *)&client_sd, sizeof (client_sd)) == -1)
    	{
+   		printf ("Could not connect to proxy\n");
    		close (sd);
    		exit (0);
    	}
+   	printf ("Proxy connected....\n");
    	
    	// Construct the HTTP CONNECT request
     snprintf (request, sizeof (request), "CONNECT %s:%d HTTP/1.1\r\nHost: %s\r\n\r\n", TARGET_HOST, 8050, TARGET_HOST);
 	
 	//Establish HTTP connection
-   	write (sd, request, sizeof (request));
+   	send (sd, request, sizeof (request), 0);
    	
    	char response [256];
-   	read (sd, response, sizeof (response));
+   	recv (sd, response, sizeof (response), 0);
    	
    	printf ("Response: %s\n", response);
    	
