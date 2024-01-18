@@ -280,7 +280,6 @@ int main()
 				else
 					simple_webserver (poll_fds + fd);
 			}
-			
 		}	 
 	} 
 	close (sockfd); 
