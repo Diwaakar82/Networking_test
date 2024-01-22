@@ -9,6 +9,8 @@
 #include <sys/wait.h>
 #include <sys/poll.h>
 #include <netdb.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #define PROXY_PORT "5020"
 #define SA struct sockaddr 
@@ -146,7 +148,7 @@ int client_creation (char* port, char* destination_server_addr)
 }
 
 // Forward the data between client and destination
-void message_handler (int client_socket, int destination_socket, char data_buffer [])
+void message_handler (int client_socket, int destination_socket, char data_buffer [], SSL *ssl_server, SSL *ssl_client)
 {
 	//char data_buffer[2048];
 	ssize_t n;
@@ -160,10 +162,10 @@ void message_handler (int client_socket, int destination_socket, char data_buffe
 	//data_buffer [n]='\0';
 	
 	printf ("Data: %s\n", data_buffer);
-	send (destination_socket, data_buffer, 1024, 0);
+	SSL_write (ssl_client, data_buffer, 1024);
 	
-	while ((n = recv(destination_socket, data_buffer, 1024, 0)) > 0)
-		send(client_socket, data_buffer, n, 0);
+	while ((n = SSL_read (ssl_client, data_buffer, 1024)) > 0)
+		SSL_write (ssl_server, data_buffer, n);
 		
 	
 	//n = recv (destination_socket, data_buffer, sizeof (data_buffer), 0);
@@ -175,12 +177,12 @@ void message_handler (int client_socket, int destination_socket, char data_buffe
 	//}
 }
 
-void handle_client (struct pollfd *poll_fds) 
+void handle_client (struct pollfd *poll_fds, SSL *ssl_server, SSL *ssl_client) 
 {
     // Receive the client's request
     char buffer [4096];
     int client_socket = poll_fds -> fd;
-    ssize_t bytes_received = recv (client_socket, buffer, sizeof (buffer), 0);
+    ssize_t bytes_received = SSL_read (ssl_server, buffer, sizeof (buffer));
 	
     if (bytes_received <= 0) 
     {
@@ -203,12 +205,14 @@ void handle_client (struct pollfd *poll_fds)
     if (strcmp (method, "CONNECT") == 0) 
     {
         // Handling CONNECT method
+        printf ("^");
         char *port_str = strchr (host, ':');
         if (port_str != NULL) 
         {
             *port_str = '\0';
             char *port = port_str + 1;
-
+			
+			printf ("Port: %s\nHost: %s\n", port, host);
             // Create a socket to connect to the destination server
             int destination_socket = client_creation (port, host);
             if (destination_socket == -1) 
@@ -217,19 +221,32 @@ void handle_client (struct pollfd *poll_fds)
                 cleanup (poll_fds);
                 exit (EXIT_FAILURE);
             }
+            
+			SSL_set_fd (ssl_client, destination_socket);
 
+			if (SSL_accept (ssl_client) <= 0) 
+			{
+				ERR_print_errors_fp (stderr);
+				SSL_shutdown (ssl_client);
+				close (destination_socket);
+				SSL_free (ssl_client);
+			}
             // Notify the client that the connection is established
             //const char *response = "HTTP/1.1 200 Connection established\0";
 			//send (client_socket, response, 37, 0);
 			
             // Forward the data between client and destination
-            ssize_t n;
-            
-            message_handler (client_socket, destination_socket, data_buffer);
-			
-            // Clean up
-            close (destination_socket);
-            cleanup (poll_fds);
+            else
+            {
+		        ssize_t n;
+		        message_handler (client_socket, destination_socket, data_buffer, ssl_server, ssl_client);
+					
+		        // Clean up
+		        SSL_shutdown (ssl_client);
+				close (destination_socket);
+				SSL_free (ssl_client);
+		        cleanup (poll_fds);
+            }
         }
     }
     else
@@ -247,13 +264,29 @@ void handle_client (struct pollfd *poll_fds)
             cleanup (poll_fds);
             exit (EXIT_FAILURE);
         }
-        
-        message_handler (client_socket, destination_socket, data_buffer);
+
+		SSL_set_fd (ssl_client, destination_socket);
+
+		if (SSL_accept (ssl_client) <= 0) 
+		{
+			ERR_print_errors_fp (stderr);
+			SSL_shutdown (ssl_client);
+			close (destination_socket);
+			SSL_free (ssl_client);
+			return;
+		}
+		
+        message_handler (client_socket, destination_socket, data_buffer, ssl_server, ssl_client);
 			
         // Clean up
-        close (destination_socket);
+        SSL_shutdown (ssl_client);
+		close (destination_socket);
+		SSL_free (ssl_client);
         cleanup (poll_fds);
     }
+    SSL_shutdown (ssl_server);
+    close (client_socket);
+    SSL_free (ssl_server);
 }
 
 int server_creation ()
@@ -312,7 +345,7 @@ int server_creation ()
 
 
 //connection establishment with the client
-int connection_accepting (int sockfd, struct pollfd **poll_fds, int *max_fds, int *num_fds)
+SSL *connection_accepting (int sockfd, struct pollfd **poll_fds, int *max_fds, int *num_fds, SSL *ssl_server, SSL *ssl_client)
 {
 	int connfd;
 	struct sockaddr_storage their_addr;
@@ -325,8 +358,18 @@ int connection_accepting (int sockfd, struct pollfd **poll_fds, int *max_fds, in
 	if (connfd == -1)
 	{ 
 		perror ("\naccept error\n");
-		return -1;
+		return NULL;
 	} 
+	
+    SSL_set_fd (ssl_server, connfd);
+
+    if (SSL_accept (ssl_server) <= 0) 
+    {
+        ERR_print_errors_fp (stderr);
+        SSL_shutdown (ssl_server);
+        close (connfd);
+        SSL_free (ssl_server);
+    }
 	
 	if (*num_fds == *max_fds) 
 	{
@@ -370,6 +413,38 @@ int main ()
     struct pollfd *poll_fds;
 	int max_fds = 0, num_fds = 0, nfds;
     
+    SSL_library_init ();
+    SSL_load_error_strings ();
+    
+    SSL_CTX *ssl_server_ctx = SSL_CTX_new (SSLv23_server_method ());
+    if (!ssl_server_ctx) 
+    {
+        perror ("Error creating SSL context");
+        exit (EXIT_FAILURE);
+    }
+    
+    SSL_CTX *ssl_client_ctx = SSL_CTX_new (SSLv23_client_method ());
+    if (!ssl_client_ctx) 
+    {
+        perror ("Error creating SSL context");
+        exit (EXIT_FAILURE);
+    }
+
+    // Load the server certificate and private key
+    if (SSL_CTX_use_certificate_file (ssl_server_ctx, "server.crt", SSL_FILETYPE_PEM) <= 0) 
+    {
+        ERR_print_errors_fp (stderr);
+        exit (EXIT_FAILURE);
+    }
+
+    if (SSL_CTX_use_PrivateKey_file (ssl_server_ctx, "server.key", SSL_FILETYPE_PEM) <= 0) 
+    {
+        ERR_print_errors_fp (stderr);
+        exit (EXIT_FAILURE);
+    }
+    
+    SSL *ssl_server = SSL_new (ssl_server_ctx);
+    SSL *ssl_client = SSL_new (ssl_client_ctx);
     
     proxy_socket = server_creation ();
 	
@@ -394,6 +469,7 @@ int main ()
     while (1) 
     {
     	nfds = num_fds;
+    	
 		if (poll (poll_fds, nfds, -1) == -1)
 		{
 			perror("poll");
@@ -408,13 +484,19 @@ int main ()
 			if (((poll_fds + fd) -> revents & POLLIN) == POLLIN)
 			{
 				if ((poll_fds + fd) -> fd == proxy_socket)
-					connection_accepting (proxy_socket, &poll_fds, &max_fds, &num_fds);
+					connection_accepting (proxy_socket, &poll_fds, &max_fds, &num_fds, ssl_server, ssl_client);
 				else
-					handle_client (poll_fds + fd);
+					handle_client (poll_fds + fd, ssl_server, ssl_client);
 			}
 		}
     }
-
+	
     close (proxy_socket);
+    SSL_shutdown(ssl_server);
+    SSL_shutdown(ssl_client);
+    SSL_free (ssl_server);
+    SSL_free (ssl_client);
+    SSL_CTX_free (ssl_server_ctx);
+    SSL_CTX_free (ssl_client_ctx);
     return 0;
 }
