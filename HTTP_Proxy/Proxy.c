@@ -83,6 +83,7 @@ int client_creation (char* port, char* destination_server_addr)
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 	
+	printf ("Dest: %s\nPort: %s\n", destination_server_addr, port);
 	if ((rv = getaddrinfo (destination_server_addr, port, &hints, &servinfo)) != 0)
 	{
 		fprintf(stderr, "getaddrinfo: %s\n",gai_strerror(rv));	
@@ -113,12 +114,12 @@ int client_creation (char* port, char* destination_server_addr)
 		}
 		
 		// it will help us to bind to the port.
-		if (bind (sockfd, (SA*) &proxy_addr, sizeof (proxy_addr)) == -1) 
+		/*if (bind (sockfd, (SA*) &proxy_addr, sizeof (proxy_addr)) == -1) 
 		{
 			close (sockfd);
 			perror ("client: bind");
 			continue;
-		}
+		}*/
 		
 		// connect will help us to connect to the server with the addr given in arguments.
 		if (connect (sockfd, p -> ai_addr, p -> ai_addrlen) == -1) 
@@ -145,28 +146,33 @@ int client_creation (char* port, char* destination_server_addr)
 }
 
 // Forward the data between client and destination
-void message_handler (int client_socket, int destination_socket)
+void message_handler (int client_socket, int destination_socket, char data_buffer [])
 {
-	char data_buffer[2048];
+	//char data_buffer[2048];
 	ssize_t n;
 	
-	while (1) 
-	{
-		n = recv (client_socket, data_buffer, sizeof (data_buffer), 0);
-		if (n <= 0)
-		    break;
+	//while (1) 
+	//{
+	//n = recv (client_socket, data_buffer, sizeof (data_buffer), 0);
+	//if (n <= 0)
+	  //  break;
 
-		data_buffer [n]='\0';
+	//data_buffer [n]='\0';
+	
+	printf ("Data: %s\n", data_buffer);
+	send (destination_socket, data_buffer, 1024, 0);
+	
+	while ((n = recv(destination_socket, data_buffer, 1024, 0)) > 0)
+		send(client_socket, data_buffer, n, 0);
 		
-		send (destination_socket, data_buffer, n, 0);
-		
-		n = recv (destination_socket, data_buffer, sizeof (data_buffer), 0);
-		if (n <= 0)
-		    break;
+	
+	//n = recv (destination_socket, data_buffer, sizeof (data_buffer), 0);
+	//if (n <= 0)
+	  //  break;
 
-		data_buffer [n] = '\0';
-		send (client_socket, data_buffer, n, 0);
-	}
+	//data_buffer [n] = '\0';
+	//send (client_socket, data_buffer, 1024, 0);
+	//}
 }
 
 void handle_client (struct pollfd *poll_fds) 
@@ -186,9 +192,14 @@ void handle_client (struct pollfd *poll_fds)
 	
     // Extract the method and host from the request
     char method [16];
+    char data_buffer [4096];
     char host [256];
+    
+    strcpy (data_buffer, buffer);
+    printf ("Buffer: %s\n", data_buffer);
     sscanf (buffer, "%s %s", method, host);
-
+    printf ("Method: %s\nHost: %s", method, host);
+	
     if (strcmp (method, "CONNECT") == 0) 
     {
         // Handling CONNECT method
@@ -208,19 +219,40 @@ void handle_client (struct pollfd *poll_fds)
             }
 
             // Notify the client that the connection is established
-            const char *response = "HTTP/1.1 200 Connection established\0";
-			send (client_socket, response, 37, 0);
+            //const char *response = "HTTP/1.1 200 Connection established\0";
+			//send (client_socket, response, 37, 0);
 			
             // Forward the data between client and destination
-            char data_buffer [4096];
             ssize_t n;
             
-            message_handler (client_socket, destination_socket);
+            message_handler (client_socket, destination_socket, data_buffer);
 			
             // Clean up
             close (destination_socket);
             cleanup (poll_fds);
         }
+    }
+    else
+    {	
+    	printf ("&");
+    	char *host_start = strstr (buffer, "Host: ") + 6;
+		char *host_end = strstr (host_start, "\r\n");
+		*host_end = '\0';
+		
+		printf ("Host: %s\n", host_start);
+		int destination_socket = client_creation ("80", host_start);
+		if (destination_socket == -1) 
+        {
+            perror ("socket");
+            cleanup (poll_fds);
+            exit (EXIT_FAILURE);
+        }
+        
+        message_handler (client_socket, destination_socket, data_buffer);
+			
+        // Clean up
+        close (destination_socket);
+        cleanup (poll_fds);
     }
 }
 
@@ -318,14 +350,14 @@ int connection_accepting (int sockfd, struct pollfd **poll_fds, int *max_fds, in
 	inet_ntop (their_addr.ss_family, get_in_addr ((struct sockaddr *)&their_addr), s, sizeof (s));
 	
 	//////IP filtering
-   	if (!is_ip_in_subnet (s + 7, ip_mask))
+   	/*if (!is_ip_in_subnet (s + 7, ip_mask))
    	{
    		printf ("Blocked IP address: %s\n", s);
    		close (sockfd);
    		close (connfd);
    		
    		return;
-   	}
+   	}*/
    	
    	//////IP Filtering above
 	

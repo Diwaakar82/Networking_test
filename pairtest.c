@@ -1,72 +1,101 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ifaddrs.h>
-#include <netinet/in.h>
+#include <unistd.h>
 #include <arpa/inet.h>
+#include <poll.h>
+#include <fcntl.h>
 
 int main() {
-    struct ifaddrs *ifaddr, *ifa;
+    int server_socket, client_socket;
+    int yes = 1;
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
 
-    // Get the list of all network interfaces
-    if (getifaddrs(&ifaddr) == -1) {
-        perror("getifaddrs");
+    // Create socket
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket == -1) {
+        perror("Error creating socket");
+        exit(EXIT_FAILURE);
+    }
+	
+	if (setsockopt (server_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof (int)) == -1)
+	{
+		perror ("setsockopt");
+		exit (1);
+	}
+    // Initialize server address struct
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(8080);
+
+    // Bind the socket
+    if (bind(server_socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
+        perror("Error binding socket");
+        close(server_socket);
+        exit(EXIT_FAILURE);
+    }
+	
+	fcntl (server_socket, F_SETFL, O_NONBLOCK);
+	
+    // Listen for incoming connections
+    if (listen(server_socket, 5) == -1) {
+        perror("Error listening for connections");
+        close(server_socket);
         exit(EXIT_FAILURE);
     }
 
-    // Iterate through the list
-    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr == NULL)
-            continue;
+    printf("Server listening on port 8080...\n");
 
-        printf("Interface Name: %s\n", ifa->ifa_name);
-
-        // Check if it is an IPv4 or IPv6 interface
-        if (ifa->ifa_addr->sa_family == AF_INET) {
-            struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
-            char ip[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &(addr->sin_addr), ip, INET_ADDRSTRLEN);
-            printf("    IPv4 Address: %s\n", ip);
-
-            // Print Netmask if available
-            if (ifa->ifa_netmask != NULL) {
-                struct sockaddr_in *netmask = (struct sockaddr_in *)ifa->ifa_netmask;
-                printf("    Netmask: %s\n", inet_ntoa(netmask->sin_addr));
-            }
-
-            // Print Broadcast Address if available
-            if (ifa->ifa_broadaddr != NULL) {
-                struct sockaddr_in *broadaddr = (struct sockaddr_in *)ifa->ifa_broadaddr;
-                printf("    Broadcast Address: %s\n", inet_ntoa(broadaddr->sin_addr));
-            }
-        } else if (ifa->ifa_addr->sa_family == AF_INET6) {
-            struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)ifa->ifa_addr;
-            char ip6[INET6_ADDRSTRLEN];
-            inet_ntop(AF_INET6, &(addr6->sin6_addr), ip6, INET6_ADDRSTRLEN);
-            printf("    IPv6 Address: %s\n", ip6);
-
-            // Print Netmask if available
-            if (ifa->ifa_netmask != NULL) {
-                struct sockaddr_in6 *netmask6 = (struct sockaddr_in6 *)ifa->ifa_netmask;
-                // Handle IPv6 netmask appropriately (e.g., using inet_ntop)
-                // Example: printf("    Netmask: %s\n", inet_ntop(AF_INET6, &(netmask6->sin6_addr), ip6, INET6_ADDRSTRLEN));
-            }
-
-            // Print Broadcast Address if available
-            if (ifa->ifa_broadaddr != NULL) {
-                struct sockaddr_in6 *broadaddr6 = (struct sockaddr_in6 *)ifa->ifa_broadaddr;
-                // Handle IPv6 broadcast address appropriately (e.g., using inet_ntop)
-                // Example: printf("    Broadcast Address: %s\n", inet_ntop(AF_INET6, &(broadaddr6->sin6_addr), ip6, INET6_ADDRSTRLEN));
-            }
-        }
-
-        // Print Data Length if available
-        printf("    Data Length: %ld\n", ifa->ifa_data == NULL ? 0 : strlen(ifa->ifa_data));
-        printf("\n");
+    // Accept incoming connections
+    client_socket = accept(server_socket, (struct sockaddr*)&client_addr, &client_addr_len);
+    if (client_socket == -1) {
+        perror("Error accepting connection");
+        close(server_socket);
+        exit(EXIT_FAILURE);
     }
 
-    // Free the memory allocated by getifaddrs
-    freeifaddrs(ifaddr);
+    // Shutdown the reading side of the socket (poll for write events)
+    if (shutdown(client_socket, SHUT_RD) == -1) {
+        perror("Error shutting down socket");
+        close(server_socket);
+        close(client_socket);
+        exit(EXIT_FAILURE);
+    }
+
+    // Use poll to wait for write events
+    struct pollfd poll_fds[1];
+    poll_fds[0].fd = client_socket;
+    poll_fds[0].events = POLLIN | POLLOUT;
+
+    int poll_result = poll(poll_fds, 1, -1); // -1: wait indefinitely
+	
+    if (poll_result == -1) {
+        perror("Error in poll");
+        close(server_socket);
+        close(client_socket);
+        exit(EXIT_FAILURE);
+    } else if (poll_result == 0) {
+        printf("No events occurred within the timeout period.\n");
+    } else {
+    	printf ("revents: %d\n", poll_fds [0].revents);
+        if (poll_fds[0].revents & POLLIN) {
+            printf("Socket is ready for writing.\n");
+            
+            char buf [1000];
+            if (recv (client_socket, buf, 1000, 0) == -1)
+				perror ("recv");
+            
+            printf ("&");
+            // Perform write operations or other necessary actions here
+        }
+    }
+
+    // Clean up
+    close(server_socket);
+    close(client_socket);
 
     return 0;
 }
+

@@ -13,7 +13,7 @@
 #include <time.h>
 
 #define PORT "8080"			//Port used for connections
-#define MAXDATASIZE 100000
+#define MAXDATASIZE 1000
 
 //Return the IPv4 or IPv6 address
 void *get_in_addr (struct sockaddr *sa)
@@ -63,33 +63,30 @@ void initialize (struct addrinfo *hints)
 //Send message
 void send_message (int sockfd, char *msg)
 {
-	int x = send (sockfd, msg, 100, 0);
-	if (x == -1)
+	if (send (sockfd, msg, sizeof (msg), 0) == -1)
 	{
 		perror ("send");
 		exit (0);
 	}
-	printf ("Sent: %u\n", msg);
 }
 
 //Receive message
 int receive_message (int sockfd, char *buf)
 {
 	int numbytes;
-	if ((numbytes = recv (sockfd, buf, 100, 0)) == -1)
+	if ((numbytes = recv (sockfd, buf, 1000, 0)) == -1)
 	{
 		perror ("recv");
 		exit (0);
 	}
 	
-	printf ("Rvd: %u\n", buf);
 	return numbytes;
 }
 
 int main (int argc, char *argv [])
 {
 	int sockfd, numbytes;
-	char buf [MAXDATASIZE], new_buf [MAXDATASIZE];
+	char buf [MAXDATASIZE];
 	struct addrinfo hints, *servinfo, *p;
 	int rv;
 	char s [INET6_ADDRSTRLEN];
@@ -124,19 +121,14 @@ int main (int argc, char *argv [])
 	//Server information not required anymore
 	freeaddrinfo (servinfo);
 	
-	scanf ("%s", buf);
-	printf ("%d: %s\n", sizeof (buf), buf);
-	while (1)
-	{
-		send_message (sockfd, buf);	
-		numbytes = receive_message (sockfd, new_buf);
-	}
+	send_message (sockfd, "Hi");	
+	numbytes = receive_message (sockfd, buf);
 	
 	//Find system time
 	time_t current_time;
 	time (&current_time);
 
-	printf ("Client received Time: %s%s\n", ctime (&current_time), new_buf);
+	printf ("Client received Time: %s%s\n", ctime (&current_time), buf);
 	close (sockfd);
 	
 	return 0;

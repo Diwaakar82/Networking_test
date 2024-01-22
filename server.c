@@ -117,7 +117,7 @@ int main ()
 	initialize (&hints);
 	
 	//Get server address
-	if ((rv = getaddrinfo ("10.39.17.251", PORT, &hints, &servinfo)) != 0)
+	if ((rv = getaddrinfo (NULL, PORT, &hints, &servinfo)) != 0)
 	{
 		fprintf (stderr, "getaddrinfo: %s\n", gai_strerror (rv));
 		return 1;
@@ -178,7 +178,7 @@ int main ()
 		
 		//Read incoming message
 		if (ufds [1].revents & POLLIN)
-			//receive_message (new_fd, buffer);
+			receive_message (new_fd, buffer);
 		printf ("Messsage: %s\n", buffer);
 		
 		//Find system time
