@@ -7,16 +7,15 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <sys/poll.h>
 #include <netdb.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
 #define PROXY_PORT "5020"
 #define SA struct sockaddr 
-#define NUM_FDS 2
 
-char ip_mask [100];
+SSL_CTX *ssl_server_ctx;
+SSL_CTX *ssl_client_ctx;	
 
 void get_data (int source_fd, int dest_fd)
 {
@@ -24,11 +23,11 @@ void get_data (int source_fd, int dest_fd)
 	int bytes = 0;
 	
 	memset (&buffer, '\0', sizeof (buffer));  
-   	bytes = recv (source_fd, buffer, sizeof (buffer), 0);
+   	bytes = read (source_fd, buffer, sizeof (buffer));
    	  
    	if (bytes > 0)  
    	{	
-        send (dest_fd, buffer, sizeof (buffer), 0);                                  
+        write (dest_fd, buffer, sizeof (buffer));                                  
         fputs (buffer, stdout);         
    	}
 }
@@ -66,12 +65,6 @@ int is_ip_in_subnet(char ip_str [], char subnet_str [])
     
     // Check if the result is equal to the ip (indicating that the IP is in the subnet)
     return (result == ip);
-}
-
-void cleanup (struct pollfd *poll_fds)
-{
-	close (poll_fds -> fd);
-	poll_fds -> fd *= -1;
 }
 
 int client_creation (char* port, char* destination_server_addr)
@@ -150,143 +143,153 @@ int client_creation (char* port, char* destination_server_addr)
 // Forward the data between client and destination
 void message_handler (int client_socket, int destination_socket, char data_buffer [], SSL *ssl_server, SSL *ssl_client)
 {
-	//char data_buffer[2048];
 	ssize_t n;
-	
-	//while (1) 
-	//{
-	//n = recv (client_socket, data_buffer, sizeof (data_buffer), 0);
-	//if (n <= 0)
-	  //  break;
 
-	//data_buffer [n]='\0';
-	
-	printf ("Data: %s\n", data_buffer);
+	n = SSL_read (ssl_server, data_buffer, sizeof (data_buffer));
+	if (n <= 0)
+		return;
+
+	data_buffer [n] = '\0';
+
 	SSL_write (ssl_client, data_buffer, 1024);
 	
 	while ((n = SSL_read (ssl_client, data_buffer, 1024)) > 0)
 		SSL_write (ssl_server, data_buffer, n);
-		
-	
-	//n = recv (destination_socket, data_buffer, sizeof (data_buffer), 0);
-	//if (n <= 0)
-	  //  break;
-
-	//data_buffer [n] = '\0';
-	//send (client_socket, data_buffer, 1024, 0);
-	//}
 }
 
-void handle_client (struct pollfd *poll_fds, SSL *ssl_server, SSL *ssl_client) 
+void message_handler_http(int client_socket,int destination_socket,char data[])
+{
+	// Forward the data between client and destination sockets
+	ssize_t n;
+	n = write(destination_socket, data, 2048);
+	
+	while ((n = recv(destination_socket, data, 2048, 0)) > 0)
+		send(client_socket, data, n, 0);
+}
+
+void handle_client (int client_socket) 
 {
     // Receive the client's request
     char buffer [4096];
-    int client_socket = poll_fds -> fd;
-    ssize_t bytes_received = SSL_read (ssl_server, buffer, sizeof (buffer));
-	
-    if (bytes_received <= 0) 
+    printf ("$%d\n", sizeof (buffer));
+    
+    //Receive connect method message
+    int n = read (client_socket, buffer, sizeof (buffer));
+    if (n <= 0)
     {
-        perror ("recv");
-        cleanup (poll_fds);
-        exit (EXIT_FAILURE);
+    	close (client_socket);
+    	exit (0);
     }
-	buffer [bytes_received] = '\0';
-	
+    
+    buffer [n] = '\0';
+   	
     // Extract the method and host from the request
     char method [16];
-    char data_buffer [4096];
     char host [256];
+    char data_buffer [4096];
     
     strcpy (data_buffer, buffer);
     printf ("Buffer: %s\n", data_buffer);
     sscanf (buffer, "%s %s", method, host);
-    printf ("Method: %s\nHost: %s", method, host);
-	
+    printf ("Method: %s\nHost: %s\n", method, host);
+
     if (strcmp (method, "CONNECT") == 0) 
     {
         // Handling CONNECT method
-        printf ("^");
         char *port_str = strchr (host, ':');
+        char https_port [10] = "443";
+        char *port;
+        
         if (port_str != NULL) 
         {
             *port_str = '\0';
-            char *port = port_str + 1;
-			
-			printf ("Port: %s\nHost: %s\n", port, host);
-            // Create a socket to connect to the destination server
-            int destination_socket = client_creation (port, host);
-            if (destination_socket == -1) 
-            {
-                perror ("socket");
-                cleanup (poll_fds);
-                exit (EXIT_FAILURE);
-            }
-            
-			SSL_set_fd (ssl_client, destination_socket);
-
-			if (SSL_accept (ssl_client) <= 0) 
-			{
-				ERR_print_errors_fp (stderr);
-				SSL_shutdown (ssl_client);
-				close (destination_socket);
-				SSL_free (ssl_client);
-			}
-            // Notify the client that the connection is established
-            //const char *response = "HTTP/1.1 200 Connection established\0";
-			//send (client_socket, response, 37, 0);
-			
-            // Forward the data between client and destination
-            else
-            {
-		        ssize_t n;
-		        message_handler (client_socket, destination_socket, data_buffer, ssl_server, ssl_client);
-					
-		        // Clean up
-		        SSL_shutdown (ssl_client);
-				close (destination_socket);
-				SSL_free (ssl_client);
-		        cleanup (poll_fds);
-            }
+            port = port_str + 1;
         }
-    }
-    else
-    {	
-    	printf ("&");
-    	char *host_start = strstr (buffer, "Host: ") + 6;
-		char *host_end = strstr (host_start, "\r\n");
-		*host_end = '\0';
-		
-		printf ("Host: %s\n", host_start);
-		int destination_socket = client_creation ("80", host_start);
-		if (destination_socket == -1) 
+        else
+        	port = https_port;
+
+        // Create a socket to connect to the destination server
+        printf ("POrt: %s\n", port);
+        int destination_socket = client_creation (port, host);
+        if (destination_socket == -1) 
         {
             perror ("socket");
-            cleanup (poll_fds);
+            close (client_socket);
             exit (EXIT_FAILURE);
         }
-
+		
+		const char *response = "HTTP/1.1 200 Connection established\r\n\r\n";
+	    int r = write (client_socket, response, strlen (response));
+		
+		SSL *ssl_client = SSL_new (ssl_client_ctx);
 		SSL_set_fd (ssl_client, destination_socket);
-
-		if (SSL_accept (ssl_client) <= 0) 
+		
+		if (SSL_connect (ssl_client) <= 0) 
 		{
 			ERR_print_errors_fp (stderr);
-			SSL_shutdown (ssl_client);
+			close (client_socket);
 			close (destination_socket);
-			SSL_free (ssl_client);
 			return;
 		}
+			
+		SSL *ssl_server = SSL_new (ssl_server_ctx);
+		SSL_set_fd (ssl_server, client_socket);
 		
+		if (SSL_accept (ssl_server))
+		{
+			ERR_print_errors_fp (stderr);
+			SSL_shutdown(ssl_client);
+			SSL_free (ssl_client);
+			close (client_socket);
+			close (destination_socket);
+			return;
+		}		
+	
         message_handler (client_socket, destination_socket, data_buffer, ssl_server, ssl_client);
 			
         // Clean up
-        SSL_shutdown (ssl_client);
 		close (destination_socket);
+        close (client_socket);
+        SSL_shutdown(ssl_server);
+		SSL_shutdown(ssl_client);
+		SSL_free (ssl_server);
 		SSL_free (ssl_client);
-        cleanup (poll_fds);
+	}
+    else
+    {
+    	printf ("&");
+		char *host_str = strstr (buffer, "Host: ") + 6;
+		char *host_end = strstr (host_str, "\r\n");
+		*host_end = '\0';
+		
+		char* port;
+        char http_port [10] = "80";
+        char* port_str = strchr (host_str, ':');
+    	if (port_str != NULL) 
+    	{
+			*port_str = '\0';
+			port = port_str + 1;
+		}
+    	else
+    		port = http_port;
+	 
+		
+		printf ("Host: %s\n", host_str);
+		int destination_socket = client_creation (port, host_str);
+		if (destination_socket == -1) 
+	    {
+	        perror ("socket");
+	        close (client_socket);
+	        exit (EXIT_FAILURE);
+	    }
+		
+	    message_handler_http (client_socket, destination_socket, data_buffer);
+			
+	    // Clean up
+		close (destination_socket);
+	    close (client_socket);
     }
-    SSL_shutdown (ssl_server);
-    close (client_socket);
-    SSL_free (ssl_server);
+        
 }
 
 int server_creation ()
@@ -343,9 +346,8 @@ int server_creation ()
 	return sockfd;
 }
 
-
 //connection establishment with the client
-SSL *connection_accepting (int sockfd, struct pollfd **poll_fds, int *max_fds, int *num_fds, SSL *ssl_server, SSL *ssl_client)
+int connection_accepting (int sockfd)
 {
 	int connfd;
 	struct sockaddr_storage their_addr;
@@ -358,36 +360,8 @@ SSL *connection_accepting (int sockfd, struct pollfd **poll_fds, int *max_fds, i
 	if (connfd == -1)
 	{ 
 		perror ("\naccept error\n");
-		return NULL;
+		return -1;
 	} 
-	
-    SSL_set_fd (ssl_server, connfd);
-
-    if (SSL_accept (ssl_server) <= 0) 
-    {
-        ERR_print_errors_fp (stderr);
-        SSL_shutdown (ssl_server);
-        close (connfd);
-        SSL_free (ssl_server);
-    }
-	
-	if (*num_fds == *max_fds) 
-	{
-        *poll_fds = realloc (*poll_fds, (*max_fds + NUM_FDS) * sizeof (struct pollfd));
-        if (*poll_fds == NULL) 
-        {
-            perror ("realloc");
-            exit (1);
-        }
-
-        *max_fds += NUM_FDS;
-    }
-
-    ((*poll_fds) + *num_fds) -> fd = connfd;
-    ((*poll_fds) + *num_fds) -> events = POLLIN;
-    ((*poll_fds) + *num_fds) -> revents = 0;
-	
-	(*num_fds)++;
 	
 	//printing the client name
 	inet_ntop (their_addr.ss_family, get_in_addr ((struct sockaddr *)&their_addr), s, sizeof (s));
@@ -405,25 +379,30 @@ SSL *connection_accepting (int sockfd, struct pollfd **poll_fds, int *max_fds, i
    	//////IP Filtering above
 	
 	printf ("\nserver: got connection from %s\n", s);
+	
+	return connfd;
 }
 
 int main () 
 {
-    int yes = 1, proxy_socket;
-    struct pollfd *poll_fds;
-	int max_fds = 0, num_fds = 0, nfds;
+    int yes = 1, proxy_socket, client_socket;
+    char ip_mask [100];
+    
+    int dummy;
+    scanf ("%d", &dummy);
     
     SSL_library_init ();
     SSL_load_error_strings ();
     
-    SSL_CTX *ssl_server_ctx = SSL_CTX_new (SSLv23_server_method ());
+    ssl_server_ctx = SSL_CTX_new (SSLv23_server_method ());
+	ssl_client_ctx = SSL_CTX_new (SSLv23_client_method ());
+    
     if (!ssl_server_ctx) 
     {
         perror ("Error creating SSL context");
         exit (EXIT_FAILURE);
     }
     
-    SSL_CTX *ssl_client_ctx = SSL_CTX_new (SSLv23_client_method ());
     if (!ssl_client_ctx) 
     {
         perror ("Error creating SSL context");
@@ -443,60 +422,43 @@ int main ()
         exit (EXIT_FAILURE);
     }
     
-    SSL *ssl_server = SSL_new (ssl_server_ctx);
-    SSL *ssl_client = SSL_new (ssl_client_ctx);
-    
     proxy_socket = server_creation ();
-	
-	if ((poll_fds = malloc (5 * sizeof (struct pollfd))) == NULL)
-	{
-		perror ("malloc");
-		exit (0);
-	}
-	max_fds = 5;
-	
-	poll_fds -> fd = proxy_socket;
-	poll_fds -> events = POLLIN;
-	poll_fds -> revents = 0;
-	num_fds = 1;
-	
+
 	//IP filtering
-	printf ("Enter the IP mask: ");
-    scanf ("%s", ip_mask);
+	//printf ("Enter the IP mask: ");
+    //scanf ("%s", ip_mask);
 	
     printf ("Proxy server is running on port %s\n", PROXY_PORT);
 	
     while (1) 
-    {
-    	nfds = num_fds;
-    	
-		if (poll (poll_fds, nfds, -1) == -1)
-		{
-			perror("poll");
-			exit(1);
-		}
+    {	
+		client_socket = connection_accepting (proxy_socket);
+		if (client_socket == -1)
+			continue;
+		//////IP filtering
 		
-		for (int fd = 0; fd < nfds; fd++)
-		{
-			if ((poll_fds + fd) -> fd <= 0)
-				continue;
-				
-			if (((poll_fds + fd) -> revents & POLLIN) == POLLIN)
-			{
-				if ((poll_fds + fd) -> fd == proxy_socket)
-					connection_accepting (proxy_socket, &poll_fds, &max_fds, &num_fds, ssl_server, ssl_client);
-				else
-					handle_client (poll_fds + fd, ssl_server, ssl_client);
-			}
-		}
+       	/*if (!is_ip_in_subnet (ip_addr, ip_mask))
+       	{
+       		printf ("Blocked IP address: %s\n", ip_addr);
+       		close (client_socket);
+       		continue;
+       	}*/
+       	
+       	//////IP Filtering above
+       	
+        // In the child process (handle the client request) 
+        if (!fork ())
+        {
+        	close (proxy_socket);
+            handle_client (client_socket);
+            close (client_socket);
+			exit (0);
+        }
+        close (client_socket);
     }
-	
-    close (proxy_socket);
-    SSL_shutdown(ssl_server);
-    SSL_shutdown(ssl_client);
-    SSL_free (ssl_server);
-    SSL_free (ssl_client);
-    SSL_CTX_free (ssl_server_ctx);
-    SSL_CTX_free (ssl_client_ctx);
+
+	SSL_CTX_free (ssl_server_ctx);
+	SSL_CTX_free (ssl_client_ctx);
+	close (proxy_socket);
     return 0;
 }
