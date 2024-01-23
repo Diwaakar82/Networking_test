@@ -77,8 +77,7 @@ int client_creation (char* port, char* destination_server_addr)
 	memset (&hints, 0, sizeof (hints));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
-	
-	printf ("Dest: %s\nPort: %s\n", destination_server_addr, port);
+
 	if ((rv = getaddrinfo (destination_server_addr, port, &hints, &servinfo)) != 0)
 	{
 		fprintf(stderr, "getaddrinfo: %s\n",gai_strerror(rv));	
@@ -171,7 +170,6 @@ void handle_client (int client_socket)
 {
     // Receive the client's request
     char buffer [4096];
-    printf ("$%d\n", sizeof (buffer));
     
     //Receive connect method message
     int n = read (client_socket, buffer, sizeof (buffer));
@@ -189,9 +187,8 @@ void handle_client (int client_socket)
     char data_buffer [4096];
     
     strcpy (data_buffer, buffer);
-    printf ("Buffer: %s\n", data_buffer);
+    printf ("%s\n", data_buffer);
     sscanf (buffer, "%s %s", method, host);
-    printf ("Method: %s\nHost: %s\n", method, host);
 
     if (strcmp (method, "CONNECT") == 0) 
     {
@@ -209,7 +206,6 @@ void handle_client (int client_socket)
         	port = https_port;
 
         // Create a socket to connect to the destination server
-        printf ("POrt: %s\n", port);
         int destination_socket = client_creation (port, host);
         if (destination_socket == -1) 
         {
@@ -257,7 +253,6 @@ void handle_client (int client_socket)
 	}
     else
     {
-    	printf ("&");
 		char *host_str = strstr (buffer, "Host: ") + 6;
 		char *host_end = strstr (host_str, "\r\n");
 		*host_end = '\0';
@@ -273,8 +268,6 @@ void handle_client (int client_socket)
     	else
     		port = http_port;
 	 
-		
-		printf ("Host: %s\n", host_str);
 		int destination_socket = client_creation (port, host_str);
 		if (destination_socket == -1) 
 	    {
