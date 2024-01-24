@@ -107,14 +107,6 @@ int client_creation (char* port, char* destination_server_addr)
 			exit (1);	
 		}
 		
-		// it will help us to bind to the port.
-		/*if (bind (sockfd, (SA*) &proxy_addr, sizeof (proxy_addr)) == -1) 
-		{
-			close (sockfd);
-			perror ("client: bind");
-			continue;
-		}*/
-		
 		// connect will help us to connect to the server with the addr given in arguments.
 		if (connect (sockfd, p -> ai_addr, p -> ai_addrlen) == -1) 
 		{
@@ -160,10 +152,10 @@ void message_handler_http(int client_socket,int destination_socket,char data[])
 {
 	// Forward the data between client and destination sockets
 	ssize_t n;
-	n = write(destination_socket, data, 2048);
+	n = write (destination_socket, data, 2048);
 	
-	while ((n = recv(destination_socket, data, 2048, 0)) > 0)
-		send(client_socket, data, n, 0);
+	while ((n = recv (destination_socket, data, 2048, 0)) > 0)
+		send (client_socket, data, n, 0);
 }
 
 void handle_client (int client_socket) 
@@ -231,7 +223,7 @@ void handle_client (int client_socket)
 		SSL *ssl_server = SSL_new (ssl_server_ctx);
 		SSL_set_fd (ssl_server, client_socket);
 		
-		if (SSL_accept (ssl_server))
+		if (SSL_accept (ssl_server) <= 0)
 		{
 			ERR_print_errors_fp (stderr);
 			SSL_shutdown(ssl_client);

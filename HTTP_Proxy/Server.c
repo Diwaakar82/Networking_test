@@ -18,7 +18,7 @@
 
 #define SA struct sockaddr 
 #define BACKLOG 10 
-#define PORT "8050"
+#define PORT "80"
 
 int flag = 0;
 
