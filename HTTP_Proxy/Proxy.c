@@ -8,15 +8,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <netdb.h>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
+#include <poll.h>
 
 #define PROXY_PORT "5020"
 #define SA struct sockaddr 
 
-SSL_CTX *ssl_server_ctx;
-SSL_CTX *ssl_client_ctx;	
-
+//Read and write data from src to dest
 void get_data (int source_fd, int dest_fd)
 {
 	char buffer [2048];
@@ -41,32 +38,7 @@ void *get_in_addr (struct sockaddr *sa)
 	return &(((struct sockaddr_in6 *) sa) -> sin6_addr);
 }
 
-// Function to convert an IP address string to a 32-bit unsigned integer
-uint32_t ip_to_uint (char ip []) 
-{
-    uint32_t result = 0;
-    unsigned char octets[4];
-
-    if (sscanf(ip, "%hhu.%hhu.%hhu.%hhu", &octets[0], &octets[1], &octets[2], &octets[3]) == 4)
-        result = (octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3];
-
-    return result;
-}
-
-// Function to check if an IP address is in a subnet
-int is_ip_in_subnet(char ip_str [], char subnet_str []) 
-{
-    // Convert IP address and subnet mask to 32-bit unsigned integers
-    uint32_t ip = ip_to_uint (ip_str);
-    uint32_t subnet = ip_to_uint (subnet_str);
-	
-    // Perform bitwise AND operation
-    uint32_t result = ip & subnet;
-    
-    // Check if the result is equal to the ip (indicating that the IP is in the subnet)
-    return (result == ip);
-}
-
+//Create client socket and connect to proxy
 int client_creation (char* port, char* destination_server_addr)
 {
 	int sockfd;
@@ -125,32 +97,66 @@ int client_creation (char* port, char* destination_server_addr)
 	
 	//printing ip address of the server.
 	inet_ntop (p -> ai_family, get_in_addr ((struct sockaddr *)p -> ai_addr), s, sizeof (s));
+	
 	printf ("proxy client: connecting to %s\n", s);
 	freeaddrinfo (servinfo);
 	
 	return sockfd;
 }
 
-// Forward the data between client and destination
-void message_handler (int client_socket, int destination_socket, char data_buffer [], SSL *ssl_server, SSL *ssl_client)
+// Forward the data between client and destination in an HTTPS connection
+void message_handler (int client_socket, int destination_socket, char data_buffer [])
 {
+	struct pollfd pollfds [2];
+    pollfds [0].fd = client_socket;
+    pollfds [0].events = POLLIN;
+    pollfds [0].revents = 0;
+    pollfds [1].fd = destination_socket;
+    pollfds [1].events = POLLIN;
+    pollfds [1].revents = 0;
 	ssize_t n;
 
-	n = SSL_read (ssl_server, data_buffer, sizeof (data_buffer));
-	if (n <= 0)
-		return;
+	while (1)
+	{
+		if (poll (pollfds, 2, -1) == -1)
+		{
+			perror ("poll");
+			exit (1);
+		}
+		
+		
+		for (int fd = 0; fd < 2; fd++)
+		{
+			//Message from client to server
+			if (pollfds [fd].revents & POLLIN && !fd)
+			{
+				n = read (pollfds [0].fd, data_buffer, 1024);
+				if (n <= 0)
+					return;
 
-	data_buffer [n] = '\0';
+				data_buffer [n] = '\0';
 
-	SSL_write (ssl_client, data_buffer, 1024);
-	
-	while ((n = SSL_read (ssl_client, data_buffer, 1024)) > 0)
-		SSL_write (ssl_server, data_buffer, n);
+				write (pollfds [1].fd, data_buffer, n);
+			}
+			
+			//Message from server to client
+			if (pollfds [fd].revents & POLLIN && fd)
+			{
+				n = read (pollfds [1].fd, data_buffer, 1024);
+				if (n <= 0)
+					return;
+
+				data_buffer [n] = '\0';
+
+				write (pollfds [0].fd, data_buffer, n);
+			}
+		}
+	}
 }
 
-void message_handler_http(int client_socket,int destination_socket,char data[])
+// Forward the data between client and destination in an HTTP connection
+void message_handler_http (int client_socket, int destination_socket, char data[])
 {
-	// Forward the data between client and destination sockets
 	ssize_t n;
 	n = write (destination_socket, data, 2048);
 	
@@ -158,6 +164,7 @@ void message_handler_http(int client_socket,int destination_socket,char data[])
 		send (client_socket, data, n, 0);
 }
 
+//Handle the request to be sent to the client
 void handle_client (int client_socket) 
 {
     // Receive the client's request
@@ -182,9 +189,9 @@ void handle_client (int client_socket)
     printf ("%s\n", data_buffer);
     sscanf (buffer, "%s %s", method, host);
 
+	// Handling CONNECT method
     if (strcmp (method, "CONNECT") == 0) 
     {
-        // Handling CONNECT method
         char *port_str = strchr (host, ':');
         char https_port [10] = "443";
         char *port;
@@ -208,41 +215,10 @@ void handle_client (int client_socket)
 		
 		const char *response = "HTTP/1.1 200 Connection established\r\n\r\n";
 	    int r = write (client_socket, response, strlen (response));
-		
-		SSL *ssl_client = SSL_new (ssl_client_ctx);
-		SSL_set_fd (ssl_client, destination_socket);
-		
-		if (SSL_connect (ssl_client) <= 0) 
-		{
-			ERR_print_errors_fp (stderr);
-			close (client_socket);
-			close (destination_socket);
-			return;
-		}
-			
-		SSL *ssl_server = SSL_new (ssl_server_ctx);
-		SSL_set_fd (ssl_server, client_socket);
-		
-		if (SSL_accept (ssl_server) <= 0)
-		{
-			ERR_print_errors_fp (stderr);
-			SSL_shutdown(ssl_client);
-			SSL_free (ssl_client);
-			close (client_socket);
-			close (destination_socket);
-			return;
-		}		
 	
-        message_handler (client_socket, destination_socket, data_buffer, ssl_server, ssl_client);
-			
-        // Clean up
-		close (destination_socket);
-        close (client_socket);
-        SSL_shutdown(ssl_server);
-		SSL_shutdown(ssl_client);
-		SSL_free (ssl_server);
-		SSL_free (ssl_client);
+        message_handler (client_socket, destination_socket, data_buffer);
 	}
+	//Handle http requests
     else
     {
 		char *host_str = strstr (buffer, "Host: ") + 6;
@@ -277,6 +253,7 @@ void handle_client (int client_socket)
         
 }
 
+//Create a server and bind to socket and start listening for connections
 int server_creation ()
 {
 	int sockfd;
@@ -322,6 +299,12 @@ int server_creation ()
 		}
 	}
 	
+	/*if (p == NULL)
+	{
+		fprintf (stderr, "server: failed to bind\n"	);
+		exit (0);	
+	}*/
+	
 	// server will be listening with maximum simultaneos connections of BACKLOG
 	if (listen (sockfd, 10) == -1)
 	{ 
@@ -350,19 +333,6 @@ int connection_accepting (int sockfd)
 	
 	//printing the client name
 	inet_ntop (their_addr.ss_family, get_in_addr ((struct sockaddr *)&their_addr), s, sizeof (s));
-	
-	//////IP filtering
-   	/*if (!is_ip_in_subnet (s + 7, ip_mask))
-   	{
-   		printf ("Blocked IP address: %s\n", s);
-   		close (sockfd);
-   		close (connfd);
-   		
-   		return;
-   	}*/
-   	
-   	//////IP Filtering above
-	
 	printf ("\nserver: got connection from %s\n", s);
 	
 	return connfd;
@@ -371,47 +341,8 @@ int connection_accepting (int sockfd)
 int main () 
 {
     int yes = 1, proxy_socket, client_socket;
-    char ip_mask [100];
-    
-    int dummy;
-    scanf ("%d", &dummy);
-    
-    SSL_library_init ();
-    SSL_load_error_strings ();
-    
-    ssl_server_ctx = SSL_CTX_new (SSLv23_server_method ());
-	ssl_client_ctx = SSL_CTX_new (SSLv23_client_method ());
-    
-    if (!ssl_server_ctx) 
-    {
-        perror ("Error creating SSL context");
-        exit (EXIT_FAILURE);
-    }
-    
-    if (!ssl_client_ctx) 
-    {
-        perror ("Error creating SSL context");
-        exit (EXIT_FAILURE);
-    }
-
-    // Load the server certificate and private key
-    if (SSL_CTX_use_certificate_file (ssl_server_ctx, "server.crt", SSL_FILETYPE_PEM) <= 0) 
-    {
-        ERR_print_errors_fp (stderr);
-        exit (EXIT_FAILURE);
-    }
-
-    if (SSL_CTX_use_PrivateKey_file (ssl_server_ctx, "server.key", SSL_FILETYPE_PEM) <= 0) 
-    {
-        ERR_print_errors_fp (stderr);
-        exit (EXIT_FAILURE);
-    }
     
     proxy_socket = server_creation ();
-
-	//IP filtering
-	//printf ("Enter the IP mask: ");
-    //scanf ("%s", ip_mask);
 	
     printf ("Proxy server is running on port %s\n", PROXY_PORT);
 	
@@ -420,30 +351,19 @@ int main ()
 		client_socket = connection_accepting (proxy_socket);
 		if (client_socket == -1)
 			continue;
-		//////IP filtering
-		
-       	/*if (!is_ip_in_subnet (ip_addr, ip_mask))
-       	{
-       		printf ("Blocked IP address: %s\n", ip_addr);
-       		close (client_socket);
-       		continue;
-       	}*/
-       	
-       	//////IP Filtering above
        	
         // In the child process (handle the client request) 
         if (!fork ())
         {
-        	close (proxy_socket);
+        	close (proxy_socket);	
+        	
             handle_client (client_socket);
             close (client_socket);
 			exit (0);
         }
         close (client_socket);
     }
-
-	SSL_CTX_free (ssl_server_ctx);
-	SSL_CTX_free (ssl_client_ctx);
+    
 	close (proxy_socket);
     return 0;
 }
