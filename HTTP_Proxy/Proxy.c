@@ -111,6 +111,7 @@ void message_handler (int client_socket, int destination_socket, char data_buffe
     pollfds [0].fd = client_socket;
     pollfds [0].events = POLLIN;
     pollfds [0].revents = 0;
+    
     pollfds [1].fd = destination_socket;
     pollfds [1].events = POLLIN;
     pollfds [1].revents = 0;
@@ -128,7 +129,7 @@ void message_handler (int client_socket, int destination_socket, char data_buffe
 		for (int fd = 0; fd < 2; fd++)
 		{
 			//Message from client to server
-			if (pollfds [fd].revents & POLLIN && !fd)
+			if (pollfds [0].revents & POLLIN)
 			{
 				n = read (pollfds [0].fd, data_buffer, 1024);
 				if (n <= 0)
@@ -140,7 +141,7 @@ void message_handler (int client_socket, int destination_socket, char data_buffe
 			}
 			
 			//Message from server to client
-			if (pollfds [fd].revents & POLLIN && fd)
+			if (pollfds [1].revents & POLLIN)
 			{
 				n = read (pollfds [1].fd, data_buffer, 1024);
 				if (n <= 0)
@@ -298,12 +299,6 @@ int server_creation ()
 			continue;
 		}
 	}
-	
-	/*if (p == NULL)
-	{
-		fprintf (stderr, "server: failed to bind\n"	);
-		exit (0);	
-	}*/
 	
 	// server will be listening with maximum simultaneos connections of BACKLOG
 	if (listen (sockfd, 10) == -1)
